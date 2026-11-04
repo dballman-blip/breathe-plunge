@@ -61,12 +61,24 @@ svg.chart{width:100%;height:auto;display:block}
 .feel button{flex:1;font-size:22px}
 details summary{cursor:pointer;font-weight:600}
 .warnbox{border-color:#5b4214;background:#1f1a10}
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 14px);transform:translate(-50%,-150%);background:linear-gradient(135deg,#f59e0b,#f472b6);color:#1a0f02;font-weight:700;padding:12px 18px;border-radius:16px;z-index:40;transition:transform .4s;box-shadow:0 8px 30px #0008;max-width:90vw;text-align:center}
+.toast.on{transform:translate(-50%,0)}
+.alt{width:100%;padding:16px;font-size:18px;font-weight:700;margin-top:10px;border-radius:18px;background:#16324a;border:1px solid #2b5a80}
+.hm{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.hm div{aspect-ratio:1;border-radius:8px;background:#1a2438;font-size:12px;display:flex;align-items:flex-start;justify-content:flex-end;padding:3px 5px;color:#8ea0bd;cursor:pointer}
+.hm .hd{background:none;aspect-ratio:auto;justify-content:center;cursor:default}.hm .e{background:none;cursor:default}
+.hm .b{background:#818cf8;color:#0b1220}.hm .p{background:#22d3ee;color:#0b1220}.hm .bp{background:linear-gradient(135deg,#818cf8 50%,#22d3ee 50%);color:#0b1220}
+.hm .today{outline:2px solid #f59e0b}.hm .sel{outline:2px solid #fff}
+.lg{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin:0 4px 0 10px}
+.badges{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.badge{background:#0e1626;border:1px solid var(--line);border-radius:14px;padding:10px 6px;text-align:center;font-size:13px}
+.badge i{display:block;font-style:normal;font-size:30px}.badge.lock{opacity:.35;filter:grayscale(1)}.badge small{color:var(--mut);display:block}
+.tag{font-size:12px;background:#16324a;color:#7dd3fc;padding:2px 7px;border-radius:8px;margin-left:4px}
 </style></head><body>
 <main>
 <section id="v-breathe" class="view on">
  <h1>Breathe</h1><div class="mut">Power breaths, an empty-lung hold, a recovery breath. Repeat.</div>
  <div class="card warnbox"><b>⚠️ Safety:</b> Never in water, in the bath, or while driving. Sit or lie down. Stop if you feel unwell. Tingling and light-headedness are common; fainting is rare but possible.</div>
  <button class="big" id="startB">Start session</button>
+ <button class="alt" id="startC">🫁 → 🧊 Breathe → Plunge</button>
  <div class="card" id="bset">
   <div class="row"><label>Rounds</label><div class="step" data-k="rounds" data-min="1" data-max="10" data-st="1"></div></div>
   <div class="row"><label>Breaths per round</label><div class="step" data-k="breaths" data-min="10" data-max="60" data-st="5"></div></div>
@@ -100,6 +112,7 @@ details summary{cursor:pointer;font-weight:600}
  <div class="card">
   <div class="row" style="display:block"><label>Target</label><div class="seg" id="plSeg" style="margin-top:8px"><button data-s="60">1 min</button><button data-s="120">2 min</button><button data-s="180">3 min</button><button data-s="300">5 min</button><button data-s="custom">Custom</button></div>
    <div id="plCustom" class="step" style="display:none;margin-top:10px"><input type="number" id="plM" min="0" max="30"><span class="mut">min</span><input type="number" id="plS" min="0" max="59"><span class="mut">sec</span></div></div>
+  <div class="row"><label>Combo transition (s)</label><input type="number" id="trS" min="30" max="120" step="5"></div>
   <div class="row"><label>3-2-1 countdown</label><label class="sw"><input type="checkbox" data-pt="countdown"><span></span></label></div>
   <div class="row" style="display:block"><label>Interval cues</label><div class="seg" id="cueSeg" style="margin-top:8px"><button data-c="0">Off</button><button data-c="30">Every 30 s</button><button data-c="60">Every 60 s</button></div></div>
   <div class="row"><label>Voice</label><label class="sw"><input type="checkbox" data-pt="voice"><span></span></label></div>
@@ -110,8 +123,9 @@ details summary{cursor:pointer;font-weight:600}
 
 <section id="v-history" class="view">
  <h1>History</h1>
- <div class="seg" id="hSeg" style="margin:10px 0"><button data-hv="b" class="on">Breathing</button><button data-hv="p">Cold plunge</button></div>
- <div id="hB"></div><div id="hP" style="display:none"></div>
+ <div class="card" id="hm"></div>
+ <div class="seg" id="hSeg" style="margin:10px 0"><button data-hv="b" class="on">Breathing</button><button data-hv="p">Cold plunge</button><button data-hv="c">🏅 Challenges</button></div>
+ <div id="hB"></div><div id="hP" style="display:none"></div><div id="hC" style="display:none"></div>
  <h2>Backup</h2>
  <div class="card"><div class="seg"><button id="exp">Export JSON</button><button id="impB">Import JSON</button></div><input type="file" id="impF" accept="application/json,.json" hidden><div class="mut" style="margin-top:8px">Covers breathing and plunge data. Data lives only on this device.</div></div>
 </section>
@@ -130,6 +144,7 @@ details summary{cursor:pointer;font-weight:600}
  <div id="rCtl"><button id="cPause">Pause</button><button id="cSkip">Skip</button><button id="cEnd" class="danger">End</button></div>
 </div>
 
+<div class="toast" id="toast"></div>
 <div class="modal" id="mod"><div class="card" id="modBody"></div></div>
 
 <script>
@@ -138,7 +153,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const LS={get:(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
 const PACES={slow:[2.2,2.2],normal:[1.6,1.6],fast:[1.0,1.0]};
 const DEF={rounds:3,breaths:30,pace:'normal',inS:1.6,outS:1.6,holdMode:'open',target:90,targetInc:0,recovery:15,rest:0,voice:true,tones:true,tick:false,vibe:true};
-const PDEF={target:120,countdown:true,cue:60,voice:true,tones:true,lastTemp:'',lastAir:'',lastLoc:'Home',locs:['Home','Cabin']};
+const PDEF={target:120,countdown:true,cue:60,voice:true,tones:true,lastTemp:'',lastAir:'',lastLoc:'Home',locs:['Home','Cabin'],transition:60};
 let S=Object.assign({},DEF,LS.get('wh.settings',{}));
 let P=Object.assign({},PDEF,LS.get('wh.plunge.settings',{}));
 const saveS=()=>LS.set('wh.settings',S),saveP=()=>LS.set('wh.plunge.settings',P);
@@ -192,12 +207,12 @@ function mainBtn(label,fn){R.main.innerHTML='';if(!label)return;const b=document
 
 /* ---------- breathing session engine ---------- */
 let sess=null;
-function startSession(){unlock();wakeOn();
- sess={start:Date.now(),settings:JSON.parse(JSON.stringify(S)),round:0,holds:[],phase:null,timer:null,paused:false,pausedAt:0,pausedTotal:0};
+function startSession(combo){unlock();wakeOn();
+ sess={comboId:combo||null,start:Date.now(),settings:JSON.parse(JSON.stringify(S)),round:0,holds:[],phase:null,timer:null,paused:false,pausedAt:0,pausedTotal:0};
  R.run.classList.add('on');$('#cPause').textContent='Pause';
  nextRound();}
 function T(fn,ms){clearTimeout(sess.timer);sess.tFn=fn;sess.tDue=Date.now()+ms;sess.timer=setTimeout(()=>{sess.tFn=null;fn()},ms)}
-let raf=null,loopId=0;function loop(fn){cancelAnimationFrame(raf);const id=++loopId;const f=()=>{if(id!==loopId||(!sess&&!pl))return;fn();if(id===loopId)raf=requestAnimationFrame(f)};raf=requestAnimationFrame(f)}
+let raf=null,loopId=0;function loop(fn){cancelAnimationFrame(raf);const id=++loopId;const f=()=>{if(id!==loopId||(!sess&&!pl&&!tr))return;fn();if(id===loopId)raf=requestAnimationFrame(f)};raf=requestAnimationFrame(f)}
 function stopLoop(){loopId++;cancelAnimationFrame(raf);raf=null}
 function nextRound(){sess.round++;if(sess.round>sess.settings.rounds)return finish(false);
  R.round.textContent=`Round ${sess.round} of ${sess.settings.rounds}`;
@@ -251,19 +266,30 @@ function skip(){if(pl)return;if(!sess)return;if(sess.paused)pauseToggle();clearT
 function finish(early){if(!sess)return;clearTimeout(sess.timer);stopLoop();wakeOff();
  const s=sess;sess=null;R.run.classList.remove('on');
  if(s.holds.length){const best=Math.max(...s.holds),avg=s.holds.reduce((a,b)=>a+b,0)/s.holds.length;
-  const rec={id:Date.now(),date:new Date(s.start).toISOString(),settings:s.settings,holds:s.holds,best,avg:Math.round(avg*10)/10,duration:Math.round((Date.now()-s.start)/1000),complete:!early};
+  const rec={comboId:s.comboId||undefined,id:Date.now(),date:new Date(s.start).toISOString(),settings:s.settings,holds:s.holds,best,avg:Math.round(avg*10)/10,duration:Math.round((Date.now()-s.start)/1000),complete:!early};
   const H=LS.get('wh.history',[]);const prevBest=H.reduce((m,x)=>Math.max(m,x.best),0);H.push(rec);LS.set('wh.history',H);
   if(!early){say('Session complete. Well done',s.settings.voice);chime(s.settings.tones,[528,660,792],2.2)}
-  summary(rec,best>prevBest&&H.length>1);
+  if(s.comboId&&!early){checkBadges();transition(s.comboId,rec);return}
+  summary(rec,best>prevBest&&H.length>1);checkBadges();
  }else{try{speechSynthesis.cancel()}catch(e){}}}
+let tr=null;
+function transition(cid,rec){const dur=Math.max(1,+P.transition||60);unlock();wakeOn();tr={cid,end:Date.now()+dur*1000};
+ R.run.classList.add('on');R.round.textContent='Breathe → Plunge · best hold '+fmt(rec.best);R.phase.textContent='Get to the plunge';
+ R.sub.innerHTML='<span style="color:#fbbf24">Breathe normally in the water.<br>Never hold your breath in the water.</span>';R.sub.style.bottom='-70px';
+ bubble(.7,1,'');$('#cPause').style.display='none';$('#cSkip').textContent='Start now';
+ say('Breathe normally. Get to the plunge',P.voice);mainBtn('Start plunge now',trGo);
+ loop(()=>{if(!tr)return;const rem=(tr.end-Date.now())/1000;R.big.textContent=fmt(Math.ceil(rem));if(rem<=0)trGo()});}
+function trEnd(){stopLoop();tr=null;$('#cPause').style.display='';$('#cSkip').textContent='Skip';R.sub.style.bottom='';R.sub.textContent=''}
+function trGo(){if(!tr)return;const c=tr.cid;trEnd();startPlunge(c)}
 function summary(r,pb){openModal(`<h2 style="margin-top:0">${r.complete?'Session complete':'Session ended'}</h2>
  ${pb?'<div class="pb">🏆 New personal best!</div>':''}
  <div class="stat" style="margin:12px 0"><div><b>${fmt(r.best)}</b><span>Best hold</span></div><div><b>${fmt(r.avg)}</b><span>Average</span></div><div><b>${fmt(r.duration)}</b><span>Total</span></div></div>
  ${r.holds.map((h,i)=>`<div class="row"><span>Round ${i+1}</span><b>${fmt(h)}</b></div>`).join('')}
  <button class="big" style="margin-top:14px" data-close>Done</button>`)}
 $('#startB').onclick=()=>{if(!LS.get('wh.ack',false)){openModal(`<h2 style="margin-top:0">Before you start</h2><p>Practice seated or lying down, never in or near water and never while driving. Light-headedness and tingling are normal. Stop if you feel unwell.</p><button class="big" id="ack">I understand</button>`);$('#ack').onclick=()=>{LS.set('wh.ack',true);closeModal();startSession()};return}startSession()};
-$('#cPause').onclick=pauseToggle;$('#cSkip').onclick=skip;
-$('#cEnd').onclick=()=>{const wasPaused=(sess&&sess.paused)||(pl&&pl.paused);if(!wasPaused)pauseToggle();confirmBox(pl?'Stop the plunge timer and log it?':'End this session? Completed rounds will be saved.',()=>{if(pl)return plStop();finish(true)},()=>{if(!wasPaused)pauseToggle()})};
+$('#cPause').onclick=pauseToggle;$('#cSkip').onclick=()=>tr?trGo():skip();
+$('#startC').onclick=()=>{const go=()=>startSession('c'+Date.now());if(!LS.get('wh.ack',false)){openModal(`<h2 style="margin-top:0">Before you start</h2><p>Do the breathing seated or lying down, out of the water. Breathe normally in the plunge, never hold your breath in water. Don't plunge alone if you're new to it.</p><button class="big" id="ack">I understand</button>`);$('#ack').onclick=()=>{LS.set('wh.ack',true);closeModal();go()};return}go()};
+$('#cEnd').onclick=()=>{if(tr){confirmBox('Skip the plunge? Your breathing session is already saved.',()=>{trEnd();wakeOff();R.run.classList.remove('on')});return}const wasPaused=(sess&&sess.paused)||(pl&&pl.paused);if(!wasPaused)pauseToggle();confirmBox(pl?'Stop the plunge timer and log it?':'End this session? Completed rounds will be saved.',()=>{if(pl)return plStop();finish(true)},()=>{if(!wasPaused)pauseToggle()})};
 
 /* ---------- modal ---------- */
 function openModal(h){$('#modBody').innerHTML=h;$('#mod').classList.add('on');$$('#modBody [data-close]').forEach(b=>b.onclick=closeModal)}
@@ -282,7 +308,7 @@ $$('#cueSeg button').forEach(b=>b.onclick=()=>{P.cue=+b.dataset.c;saveP();render
 $$('[data-pt]').forEach(i=>i.onchange=()=>{P[i.dataset.pt]=i.checked;saveP()});renderP();
 let pl=null;
 function plSay(t){say(t,P.voice)}
-function startPlunge(){unlock();wakeOn();pl={target:P.target,paused:false,pausedTotal:0,start:0,cd:P.countdown?3:0,last:-1,reached:false,half:false};
+function startPlunge(cid){unlock();wakeOn();pl={comboId:typeof cid==='string'?cid:null,target:P.target,paused:false,pausedTotal:0,start:0,cd:P.countdown?3:0,last:-1,reached:false,half:false};
  R.run.classList.add('on');$('#cPause').textContent='Pause';$('#cSkip').style.display='none';R.round.textContent='Cold plunge';
  bubble(.8,.5,'hold');R.bub.style.background='radial-gradient(circle at 35% 30%,#bae6fd,#0ea5e9 55%,#075985)';
  if(pl.cd){R.phase.textContent='Get ready';let n=3;const cd=()=>{if(!pl)return;if(n===0){go();return}R.big.textContent=n;R.sub.textContent='';plSay(String(n));chime(P.tones,[440],.5,.1);n--;pl.cdT=setTimeout(cd,1000)};mainBtn(null);cd()}else go();}
@@ -298,8 +324,8 @@ function plPause(){if(!pl||!pl.start)return;if(!pl.paused){pl.paused=true;pl.pau
 function plStop(){if(!pl)return;clearTimeout(pl.cdT);stopLoop();const p=pl;
  const dur=p.start?Math.round((Date.now()-p.start-p.pausedTotal-(p.paused?Date.now()-p.pausedAt:0))/1000):0;pl=null;wakeOff();
  R.run.classList.remove('on');$('#cSkip').style.display='';R.bub.style.background='';
- if(dur<1)return;chime(P.tones,[440,330]);plLog(dur,p.target)}
-function plLog(dur,target){const locs=P.locs;
+ if(dur<1)return;chime(P.tones,[440,330]);plLog(dur,p.target,p.comboId)}
+function plLog(dur,target,cid){const locs=P.locs;
  openModal(`<h2 style="margin-top:0">Log plunge</h2>
  <div class="row"><label>Duration</label><span class="step"><input type="number" id="lM" min="0" value="${Math.floor(dur/60)}"><span class="mut">m</span><input type="number" id="lS" min="0" max="59" value="${dur%60}"><span class="mut">s</span></span></div>
  <div class="row"><label>Water temp °C</label><input type="number" id="lW" step="0.5" inputmode="decimal" value="${esc(P.lastTemp)}"></div>
@@ -311,16 +337,17 @@ function plLog(dur,target){const locs=P.locs;
  let loc=P.lastLoc,feel=4;
  $$('#lLoc button').forEach(b=>b.onclick=()=>{$$('#lLoc button').forEach(x=>x.classList.toggle('on',x===b));if(b.dataset.l==='+'){loc=null;$('#lLocT').style.display='block';$('#lLocT').focus()}else{loc=b.dataset.l;$('#lLocT').style.display='none'}});
  $$('#lFeel button').forEach(b=>b.onclick=()=>{$$('#lFeel button').forEach(x=>x.classList.toggle('on',x===b));feel=+b.dataset.f});
- $('#lX').onclick=()=>confirmBox('Discard this plunge without saving?',()=>{},()=>plLog(dur,target));
+ $('#lX').onclick=()=>confirmBox('Discard this plunge without saving?',()=>{},()=>plLog(dur,target,cid));
  $('#lSave').onclick=()=>{const d=(parseInt($('#lM').value)||0)*60+(parseInt($('#lS').value)||0);
   let L=loc;if(!L){L=$('#lLocT').value.trim()||'Other';if(!P.locs.includes(L))P.locs.push(L)}
   const w=$('#lW').value,a=$('#lA').value;P.lastTemp=w;P.lastAir=a;P.lastLoc=L;saveP();
-  const H=LS.get('wh.plunges',[]);H.push({id:Date.now(),date:new Date().toISOString(),duration:d,target,water:w===''?null:+w,air:a===''?null:+a,location:L,feel,note:$('#lN').value.trim()});LS.set('wh.plunges',H);
-  closeModal();$$('nav.tabs button')[2].click();showH('p');}}
-$('#startP').onclick=startPlunge;
+  const H=LS.get('wh.plunges',[]);H.push({comboId:cid||undefined,id:Date.now(),date:new Date().toISOString(),duration:d,target,water:w===''?null:+w,air:a===''?null:+a,location:L,feel,note:$('#lN').value.trim()});LS.set('wh.plunges',H);
+  closeModal();$$('nav.tabs button')[2].click();showH('p');checkBadges();}}
+$('#startP').onclick=()=>startPlunge();
+$('#trS').value=P.transition;$('#trS').onchange=()=>{P.transition=Math.min(120,Math.max(30,parseInt($('#trS').value)||60));$('#trS').value=P.transition;saveP()};
 
 /* ---------- history ---------- */
-let hv='b';function showH(v){hv=v;$$('#hSeg button').forEach(b=>b.classList.toggle('on',b.dataset.hv===v));$('#hB').style.display=v==='b'?'':'none';$('#hP').style.display=v==='p'?'':'none';renderHist()}
+let hv='b';function showH(v){hv=v;$$('#hSeg button').forEach(b=>b.classList.toggle('on',b.dataset.hv===v));$('#hB').style.display=v==='b'?'':'none';$('#hP').style.display=v==='p'?'':'none';$('#hC').style.display=v==='c'?'':'none';renderHist()}
 $$('#hSeg button').forEach(b=>b.onclick=()=>showH(b.dataset.hv));
 const dstr=iso=>{const d=new Date(iso);return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' · '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})};
 function chart(series,opt={}){/* series: [{vals:[], color, dash}], labels count */
@@ -336,13 +363,13 @@ function chart(series,opt={}){/* series: [{vals:[], color, dash}], labels count 
   else{if(pts.length>1)g+=`<polyline fill="none" stroke="${s.color}" stroke-width="2.5" ${s.dash?'stroke-dasharray="4 4"':''} points="${pts.map(p=>p.join(',')).join(' ')}"/>`;pts.forEach(p=>g+=`<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="${s.color}"/>`)}});
  if(opt.pbIndex!=null&&series[0].vals[opt.pbIndex]!=null)g+=`<circle cx="${x(opt.pbIndex)}" cy="${y(series[0].vals[opt.pbIndex])}" r="8" fill="none" stroke="#f59e0b" stroke-width="2.5"/>`;
  return `<svg class="chart" viewBox="0 0 ${W} ${H}">${g}</svg><div class="mut" style="font-size:13px;margin-top:4px">${series.map(s=>`<span style="color:${s.color}">●</span> ${s.name}`).join(' &nbsp; ')}${opt.pbIndex!=null?' &nbsp; <span style="color:#f59e0b">○</span> PB':''}</div>`}
-function renderHist(){
+function renderHist(){renderHM();renderCh();
  const H=LS.get('wh.history',[]).slice().sort((a,b)=>a.id-b.id);
  if(!H.length)$('#hB').innerHTML='<div class="card mut">No breathing sessions yet. Your first one will show up here.</div>';
  else{const pbv=Math.max(...H.map(h=>h.best)),pbi=H.findIndex(h=>h.best===pbv);const last=H.slice(-30),off=H.length-last.length;
   $('#hB').innerHTML=`<div class="card"><div class="stat"><div><b>${fmt(pbv)}</b><span>Personal best</span></div><div><b>${H.length}</b><span>Sessions</span></div><div><b>${fmt(H.slice(-5).reduce((a,h)=>a+h.avg,0)/Math.min(5,H.length))}</b><span>Avg (last 5)</span></div></div></div>
   <div class="card">${chart([{name:'Best',vals:last.map(h=>h.best),color:'#38bdf8'},{name:'Average',vals:last.map(h=>h.avg),color:'#818cf8',dash:1}],{fmtY:fmt,pbIndex:pbi>=off?pbi-off:null})}</div>
-  ${H.slice().reverse().map(h=>`<div class="card"><div class="hist"><div><b>${dstr(h.date)}</b> ${h.best===pbv?'<span class="pb">🏆 PB</span>':''}<div class="mut">${h.holds.length} round${h.holds.length>1?'s':''} · ${h.settings.breaths} breaths · ${h.settings.holdMode==='target'?'target':'open'} hold · ${fmt(h.duration)} total${h.complete?'':' · ended early'}</div>
+  ${H.slice().reverse().map(h=>`<div class="card"><div class="hist"><div><b>${dstr(h.date)}</b> ${h.best===pbv?'<span class="pb">🏆 PB</span>':''}${h.comboId?'<span class="tag">🔗 combo'+(comboP(h.comboId)?' · plunge '+fmt(comboP(h.comboId).duration):'')+'</span>':''}<div class="mut">${h.holds.length} round${h.holds.length>1?'s':''} · ${h.settings.breaths} breaths · ${h.settings.holdMode==='target'?'target':'open'} hold · ${fmt(h.duration)} total${h.complete?'':' · ended early'}</div>
   <div style="margin-top:4px">Best <b>${fmt(h.best)}</b> · Avg <b>${fmt(h.avg)}</b> · <span class="mut">${h.holds.map(fmt).join(' / ')}</span></div></div><button class="x danger" data-db="${h.id}">✕</button></div></div>`).join('')}`;}
  const Pl=LS.get('wh.plunges',[]).slice().sort((a,b)=>a.id-b.id);
  if(!Pl.length)$('#hP').innerHTML='<div class="card mut">No plunges logged yet.</div>';
@@ -357,7 +384,7 @@ function renderHist(){
    <div style="height:8px;background:#22304a;border-radius:6px;margin-top:12px;overflow:hidden"><div style="height:100%;width:${Math.min(100,weekMin/11*100)}%;background:linear-gradient(90deg,#38bdf8,#34d399)"></div></div><div class="mut" style="font-size:13px;margin-top:4px">Goal ≈ 11 min/week (Søeberg et al., 2021)</div></div>
    <div class="card"><b>Duration & water temp</b>${chart([{name:'Duration',vals:last.map(p=>p.duration),color:'#38bdf8',bars:1},{name:'Water °C',vals:last.map(p=>p.water),color:'#7dd3fc',axis2:1,dash:1}],{fmtY:fmt,right:1,pbIndex:pbi>=off?pbi-off:null})}</div>
    <div class="card"><b>Weekly minutes (8 wks)</b>${chart([{name:'Minutes',vals:wk.map(v=>Math.round(v*10)/10),color:'#818cf8',bars:1}],{goal:11,goalLabel:'11 min',extra:[11],fmtY:v=>v.toFixed(0)})}</div>
-   ${Pl.slice().reverse().map(p=>`<div class="card"><div class="hist"><div><b>${dstr(p.date)}</b> ${p.duration===pbv?'<span class="pb">🏆 PB</span>':''}<div style="margin-top:2px"><b>${fmt(p.duration)}</b> <span class="mut">/ target ${fmt(p.target)}</span> · ${p.water!=null?p.water+'°C water':'—'}${p.air!=null?' · '+p.air+'°C air':''}</div><div class="mut">${esc(p.location)} · ${['😣','😕','😐','🙂','🤩'][(p.feel||3)-1]}${p.note?' · '+esc(p.note):''}</div></div><button class="x danger" data-dp="${p.id}">✕</button></div></div>`).join('')}`;}
+   ${Pl.slice().reverse().map(p=>`<div class="card"><div class="hist"><div><b>${dstr(p.date)}</b> ${p.duration===pbv?'<span class="pb">🏆 PB</span>':''}${p.comboId?'<span class="tag">🔗 after breathing</span>':''}<div style="margin-top:2px"><b>${fmt(p.duration)}</b> <span class="mut">/ target ${fmt(p.target)}</span> · ${p.water!=null?p.water+'°C water':'—'}${p.air!=null?' · '+p.air+'°C air':''}</div><div class="mut">${esc(p.location)} · ${['😣','😕','😐','🙂','🤩'][(p.feel||3)-1]}${p.note?' · '+esc(p.note):''}</div></div><button class="x danger" data-dp="${p.id}">✕</button></div></div>`).join('')}`;}
  $$('[data-db]').forEach(b=>b.onclick=()=>confirmBox('Delete this breathing session?',()=>{LS.set('wh.history',LS.get('wh.history',[]).filter(h=>h.id!=b.dataset.db));renderHist()}));
  $$('[data-dp]').forEach(b=>b.onclick=()=>confirmBox('Delete this plunge?',()=>{LS.set('wh.plunges',LS.get('wh.plunges',[]).filter(h=>h.id!=b.dataset.dp));renderHist()}));}
 $('#exp').onclick=()=>{const data={app:'breathe-plunge',version:1,exported:new Date().toISOString(),breathing:LS.get('wh.history',[]),plunges:LS.get('wh.plunges',[]),settings:S,plungeSettings:P};
@@ -366,6 +393,55 @@ $('#impB').onclick=()=>$('#impF').click();
 $('#impF').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);const b=Array.isArray(d)?d:(d.breathing||[]),p=d.plunges||[];
  if(!Array.isArray(b)||!Array.isArray(p))throw 0;const merge=(k,arr)=>{const cur=LS.get(k,[]),ids=new Set(cur.map(x=>x.id));arr.forEach(x=>{if(x&&x.id&&!ids.has(x.id))cur.push(x)});LS.set(k,cur)};
  merge('wh.history',b.filter(x=>Array.isArray(x.holds)));merge('wh.plunges',p.filter(x=>typeof x.duration==='number'));renderHist();openModal(`<p>Imported ${b.length} breathing and ${p.length} plunge entries (duplicates skipped).</p><button class="big" data-close>OK</button>`)}catch(err){openModal('<p>That file isn\'t a valid backup.</p><button class="big" data-close>OK</button>')}e.target.value=''};r.readAsText(f)};
-window.__app={get sess(){return sess},get pl(){return pl}};
+const comboP=id=>LS.get('wh.plunges',[]).find(p=>p.comboId===id);
+const dkey=d=>{d=new Date(d);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const addDays=(k,n)=>{const [y,m,d]=k.split('-').map(Number);return dkey(new Date(y,m-1,d+n))};
+/* badges */
+const BADGES=[['b1','🌬️','First breath session'],['h60','⏱️','1-min hold'],['h120','🫁','2-min hold'],['h180','🧘','3-min hold'],['p1','🧊','First plunge'],['p120','❄️','2-min plunge'],['p180','🥶','3-min plunge'],['p300','🐻‍❄️','5-min plunge'],['s7','🔥','7-day plunge streak'],['s30','🌋','30-day plunge streak'],['w11','📅','4 × 11-min weeks'],['t5','🌡️','Sub-5°C plunge'],['b50','💨','50 breath sessions'],['p25','🏔️','25 plunges']];
+function badgeDates(){const B=LS.get('wh.history',[]).slice().sort((a,b)=>a.id-b.id),Pl=LS.get('wh.plunges',[]).slice().sort((a,b)=>a.id-b.id),o={};
+ const first=(arr,f)=>{const x=arr.find(f);return x?x.date:null};
+ o.b1=B[0]?.date||null;o.h60=first(B,h=>h.best>=60);o.h120=first(B,h=>h.best>=120);o.h180=first(B,h=>h.best>=180);
+ o.p1=Pl[0]?.date||null;o.p120=first(Pl,p=>p.duration>=120);o.p180=first(Pl,p=>p.duration>=180);o.p300=first(Pl,p=>p.duration>=300);
+ o.t5=first(Pl,p=>p.water!=null&&p.water<5);o.b50=B[49]?.date||null;o.p25=Pl[24]?.date||null;
+ let run=0,prev=null;o.s7=o.s30=null;for(const p of Pl){const k=dkey(p.date);if(k===prev)continue;run=prev&&addDays(prev,1)===k?run+1:1;prev=k;if(run>=7&&!o.s7)o.s7=p.date;if(run>=30&&!o.s30)o.s30=p.date}
+ const wk={};let cnt=0;o.w11=null;for(const p of Pl){const d=new Date(p.date);d.setHours(0,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7));const k=dkey(d);const was=wk[k]||0;wk[k]=was+p.duration;if(was<660&&wk[k]>=660){cnt++;if(cnt===4&&!o.w11)o.w11=p.date}}
+ return o}
+let toastQ=[],toastOn=false;function toast(t){toastQ.push(t);if(!toastOn)nextToast()}
+function nextToast(){const t=toastQ.shift();if(!t){toastOn=false;return}toastOn=true;const el=$('#toast');el.textContent=t;el.classList.add('on');chime(true,[660,880,1320],1.2,.1);setTimeout(()=>{el.classList.remove('on');setTimeout(nextToast,450)},3200)}
+function checkBadges(silent){const d=badgeDates(),seen=LS.get('wh.badgesSeen',null);const un=BADGES.filter(b=>d[b[0]]).map(b=>b[0]);
+ if(seen&&!silent)BADGES.forEach(b=>{if(d[b[0]]&&!seen.includes(b[0]))toast('🏅 Badge unlocked: '+b[1]+' '+b[2])});
+ LS.set('wh.badgesSeen',Array.from(new Set((seen||[]).concat(un))));}
+if(LS.get('wh.badgesSeen',null)===null)checkBadges(true);
+/* challenge */
+function chState(){const c=LS.get('wh.challenge',null);if(!c)return null;const days=new Set(LS.get('wh.plunges',[]).map(p=>dkey(p.date))),today=dkey(new Date());
+ let done=0,status=c.status==='abandoned'?'abandoned':'active',failDay=null;
+ for(let i=0;i<20;i++){const k=addDays(c.start,i);if(k>today)break;if(days.has(k))done++;else if(k<today){status='failed';failDay=k;break}}
+ if(status==='active'&&done>=20)status='complete';
+ const dayNo=Math.min(20,Math.round((new Date(today)-new Date(c.start))/864e5)+1);
+ if(status!==c.status&&c.status!=='abandoned'){c.status=status;if(status==='complete')c.completed=today;LS.set('wh.challenge',c)}
+ return {...c,done,status,dayNo,failDay,todayDone:days.has(today)}}
+function renderCh(){const c=chState(),d=badgeDates();let h='<div class="card"><b>🧊 20-Day Cold Streak</b><div class="mut">Plunge (or cold shower, logged as a plunge) every day for 20 days. Miss a day and it resets.</div>';
+ if(!c)h+='<button class="big" id="chStart" style="margin-top:12px">Start challenge today</button>';
+ else{const pct=c.done/20*100,col=c.status==='failed'?'#f87171':c.status==='complete'?'#34d399':'linear-gradient(90deg,#38bdf8,#34d399)';
+  h+=`<div style="display:flex;justify-content:space-between;margin-top:10px"><b style="font-size:22px">Day ${c.status==='active'?c.dayNo:c.done}/20</b><span class="${c.status==='failed'?'danger':''}" style="font-weight:700;${c.status==='complete'?'color:#34d399':''}">${{active:c.todayDone?'✓ Today done':'Plunge today!',complete:'🏆 Complete!',failed:'✗ Missed '+(c.failDay||''),abandoned:'Stopped'}[c.status]}</span></div>
+  <div style="height:12px;background:#22304a;border-radius:8px;margin:8px 0;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col}"></div></div><div class="mut">${c.done} plunge days logged since ${c.start}</div>
+  <button id="chStart" style="margin-top:10px;width:100%">${c.status==='active'?'Restart challenge':'Start again'}</button>`}
+ h+='</div><div class="card"><b>Badges</b> <span class="mut">'+BADGES.filter(b=>d[b[0]]).length+'/'+BADGES.length+'</span><div class="badges" style="margin-top:10px">'+
+  BADGES.map(b=>`<div class="badge ${d[b[0]]?'':'lock'}"><i>${d[b[0]]?b[1]:'🔒'}</i>${b[2]}<small>${d[b[0]]?new Date(d[b[0]]).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'Locked'}</small></div>`).join('')+'</div></div>';
+ $('#hC').innerHTML=h;
+ $('#chStart').onclick=()=>{const go=()=>{LS.set('wh.challenge',{start:dkey(new Date()),status:'active'});renderCh()};c&&c.status==='active'?confirmBox('Restart the 20-day challenge from today?',go):go()}}
+/* heatmap */
+let hmOff=0,hmSel=null;
+function renderHM(){const B=LS.get('wh.history',[]),Pl=LS.get('wh.plunges',[]),bd={},pd={};B.forEach(h=>(bd[dkey(h.date)]=bd[dkey(h.date)]||[]).push(h));Pl.forEach(p=>(pd[dkey(p.date)]=pd[dkey(p.date)]||[]).push(p));
+ const now=new Date(),m=new Date(now.getFullYear(),now.getMonth()+hmOff,1),today=dkey(now),nd=new Date(m.getFullYear(),m.getMonth()+1,0).getDate(),lead=(m.getDay()+6)%7;
+ let g=['M','T','W','T','F','S','S'].map(x=>`<div class="hd">${x}</div>`).join('')+'<div class="e"></div>'.repeat(lead);
+ for(let i=1;i<=nd;i++){const k=dkey(new Date(m.getFullYear(),m.getMonth(),i)),c=(bd[k]&&pd[k])?'bp':bd[k]?'b':pd[k]?'p':'';g+=`<div data-k="${k}" class="${c} ${k===today?'today':''} ${k===hmSel?'sel':''}">${i}</div>`}
+ let det='';if(hmSel){const b=bd[hmSel]||[],p=pd[hmSel]||[];det=`<div style="margin-top:12px"><b>${new Date(hmSel+'T12:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}</b>`+
+  (b.length+p.length?b.map(h=>`<div class="row"><span>🌬️ ${new Date(h.date).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${h.holds.length} rd${h.comboId?' <span class="tag">🔗</span>':''}</span><b>best ${fmt(h.best)}</b></div>`).join('')+p.map(x=>`<div class="row"><span>🧊 ${new Date(x.date).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${esc(x.location)}${x.water!=null?' · '+x.water+'°C':''}${x.comboId?' <span class="tag">🔗</span>':''}</span><b>${fmt(x.duration)}</b></div>`).join(''):'<div class="mut">Nothing logged.</div>')+'</div>'}
+ $('#hm').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><button id="hmP">‹</button><b>${m.toLocaleDateString(undefined,{month:'long',year:'numeric'})}</b><button id="hmN" ${hmOff>=0?'disabled style="opacity:.3"':''}>›</button></div><div class="hm">${g}</div>
+ <div class="mut" style="font-size:13px;margin-top:8px"><span class="lg" style="background:#818cf8;margin-left:0"></span>Breathing<span class="lg" style="background:#22d3ee"></span>Plunge<span class="lg" style="background:linear-gradient(135deg,#818cf8 50%,#22d3ee 50%)"></span>Both</div>${det}`;
+ $('#hmP').onclick=()=>{hmOff--;renderHM()};$('#hmN').onclick=()=>{if(hmOff<0){hmOff++;renderHM()}};
+ $$('#hm .hm div[data-k]').forEach(el=>el.onclick=()=>{hmSel=hmSel===el.dataset.k?null:el.dataset.k;renderHM()})}
+window.__app={get sess(){return sess},get pl(){return pl},get tr(){return tr}};
 })();
 </script></body></html>
