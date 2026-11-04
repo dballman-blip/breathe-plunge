@@ -62,7 +62,7 @@ svg.chart{width:100%;height:auto;display:block}
 details summary{cursor:pointer;font-weight:600}
 .warnbox{border-color:#5b4214;background:#1f1a10}
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 14px);transform:translate(-50%,-150%);background:linear-gradient(135deg,#f59e0b,#f472b6);color:#1a0f02;font-weight:700;padding:12px 18px;border-radius:16px;z-index:40;transition:transform .4s;box-shadow:0 8px 30px #0008;max-width:90vw;text-align:center}
-.toast.on{transform:translate(-50%,0)}
+.toast:not(.on){opacity:0;pointer-events:none}.toast{transition:transform .4s,opacity .4s}.toast.on{transform:translate(-50%,0);opacity:1}
 .alt{width:100%;padding:16px;font-size:18px;font-weight:700;margin-top:10px;border-radius:18px;background:#16324a;border:1px solid #2b5a80}
 .hm{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.hm div{aspect-ratio:1;border-radius:8px;background:#1a2438;font-size:12px;display:flex;align-items:flex-start;justify-content:flex-end;padding:3px 5px;color:#8ea0bd;cursor:pointer}
 .hm .hd{background:none;aspect-ratio:auto;justify-content:center;cursor:default}.hm .e{background:none;cursor:default}
@@ -76,7 +76,6 @@ details summary{cursor:pointer;font-weight:600}
 <main>
 <section id="v-breathe" class="view on">
  <h1>Breathe</h1><div class="mut">Power breaths, an empty-lung hold, a recovery breath. Repeat.</div>
- <div class="card warnbox"><b>⚠️ Safety:</b> Never in water, in the bath, or while driving. Sit or lie down. Stop if you feel unwell. Tingling and light-headedness are common; fainting is rare but possible.</div>
  <button class="big" id="startB">Start session</button>
  <button class="alt" id="startC">🫁 → 🧊 Breathe → Plunge</button>
  <div class="card" id="bset">
@@ -101,13 +100,12 @@ details summary{cursor:pointer;font-weight:600}
   <p><b>1. Power breaths.</b> Breathe in fully through nose or mouth, belly then chest, and let go without force. Follow the bubble: it grows on the inhale, shrinks on the exhale.</p>
   <p><b>2. Retention.</b> After the last exhale, hold with empty lungs until you feel the urge to breathe, then tap <i>Breathe</i>. Your hold time is saved. Longer isn't the goal.</p>
   <p><b>3. Recovery breath.</b> One big breath in and hold it (15 s by default), then let go. That's one round. 3–4 rounds is typical.</p>
-  <p class="mut">Best on an empty stomach, e.g. right after waking. If you have a heart condition, epilepsy, high blood pressure or are pregnant, check with a doctor first.</p>
+  <p class="mut">Best on an empty stomach, e.g. right after waking.</p>
  </details></div>
 </section>
 
 <section id="v-plunge" class="view">
  <h1>Cold Plunge</h1><div class="mut">Get in, breathe slow, let the timer do the counting.</div>
- <div class="card warnbox"><b>⚠️ Safety:</b> Never plunge alone if you're new to it. Never combine with breath-holding (no Wim Hof breathing in the water). Get out if you start shivering hard, feel confused, slur words, or lose dexterity — signs of hypothermia. Warm up gradually afterward.</div>
  <button class="big" id="startP">Start plunge</button>
  <div class="card">
   <div class="row" style="display:block"><label>Target</label><div class="seg" id="plSeg" style="margin-top:8px"><button data-s="60">1 min</button><button data-s="120">2 min</button><button data-s="180">3 min</button><button data-s="300">5 min</button><button data-s="custom">Custom</button></div>
@@ -283,9 +281,9 @@ function finish(early){if(!sess)return;clearTimeout(sess.timer);stopLoop();wakeO
 let tr=null;
 function transition(cid,rec){const dur=Math.max(1,+P.transition||60);unlock();wakeOn();tr={cid,end:Date.now()+dur*1000};
  R.run.classList.add('on');R.round.textContent='Breathe → Plunge · best hold '+fmt(rec.best);R.phase.textContent='Get to the plunge';
- R.sub.innerHTML='<span style="color:#fbbf24">Breathe normally in the water.<br>Never hold your breath in the water.</span>';R.sub.style.bottom='-70px';
+ R.sub.textContent='';
  bubble(.7,1,'');$('#cPause').style.display='none';$('#cSkip').textContent='Start now';
- say('Breathe normally. Get to the plunge',P.voice);mainBtn('Start plunge now',trGo);
+ say('Get to the plunge',P.voice);mainBtn('Start plunge now',trGo);
  loop(()=>{if(!tr)return;const rem=(tr.end-Date.now())/1000;R.big.textContent=fmt(Math.ceil(rem));if(rem<=0)trGo()});}
 function trEnd(){stopLoop();tr=null;$('#cPause').style.display='';$('#cSkip').textContent='Skip';R.sub.style.bottom='';R.sub.textContent=''}
 function trGo(){if(!tr)return;const c=tr.cid;trEnd();startPlunge(c)}
@@ -294,9 +292,9 @@ function summary(r,pb){openModal(`<h2 style="margin-top:0">${r.complete?'Session
  <div class="stat" style="margin:12px 0"><div><b>${fmt(r.best)}</b><span>Best hold</span></div><div><b>${fmt(r.avg)}</b><span>Average</span></div><div><b>${fmt(r.duration)}</b><span>Total</span></div></div>
  ${r.holds.map((h,i)=>`<div class="row"><span>Round ${i+1}</span><b>${fmt(h)}</b></div>`).join('')}
  <button class="big" style="margin-top:14px" data-close>Done</button>`)}
-$('#startB').onclick=()=>{if(!LS.get('wh.ack',false)){openModal(`<h2 style="margin-top:0">Before you start</h2><p>Practice seated or lying down, never in or near water and never while driving. Light-headedness and tingling are normal. Stop if you feel unwell.</p><button class="big" id="ack">I understand</button>`);$('#ack').onclick=()=>{LS.set('wh.ack',true);closeModal();startSession()};return}startSession()};
+$('#startB').onclick=()=>startSession();
 $('#cPause').onclick=pauseToggle;$('#cSkip').onclick=()=>tr?trGo():skip();
-$('#startC').onclick=()=>{const go=()=>startSession('c'+Date.now());if(!LS.get('wh.ack',false)){openModal(`<h2 style="margin-top:0">Before you start</h2><p>Do the breathing seated or lying down, out of the water. Breathe normally in the plunge, never hold your breath in water. Don't plunge alone if you're new to it.</p><button class="big" id="ack">I understand</button>`);$('#ack').onclick=()=>{LS.set('wh.ack',true);closeModal();go()};return}go()};
+$('#startC').onclick=()=>startSession('c'+Date.now());
 $('#cEnd').onclick=()=>{if(tr){confirmBox('Skip the plunge? Your breathing session is already saved.',()=>{trEnd();wakeOff();R.run.classList.remove('on')});return}const wasPaused=(sess&&sess.paused)||(pl&&pl.paused);if(!wasPaused)pauseToggle();confirmBox(pl?'Stop the plunge timer and log it?':'End this session? Completed rounds will be saved.',()=>{if(pl)return plStop();finish(true)},()=>{if(!wasPaused)pauseToggle()})};
 
 /* ---------- modal ---------- */
