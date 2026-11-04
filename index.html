@@ -126,6 +126,13 @@ details summary{cursor:pointer;font-weight:600}
  <div class="card" id="hm"></div>
  <div class="seg" id="hSeg" style="margin:10px 0"><button data-hv="b" class="on">Breathing</button><button data-hv="p">Cold plunge</button><button data-hv="c">🏅 Challenges</button></div>
  <div id="hB"></div><div id="hP" style="display:none"></div><div id="hC" style="display:none"></div>
+ <h2>ROCK Core backup</h2>
+ <div class="card" id="syncCard">
+  <div class="row"><label>Auto-backup</label><label class="sw"><input type="checkbox" id="syOn"><span></span></label></div>
+  <div style="padding:8px 0"><input type="text" id="syUrl" inputmode="url" autocapitalize="off" spellcheck="false"></div>
+  <div class="mut" id="syStat" style="margin-bottom:10px"></div>
+  <div class="seg"><button id="syNow" style="flex:1">Back up now</button><button id="syRes" style="flex:1">Restore from ROCK Core</button></div>
+ </div>
  <h2>Backup</h2>
  <div class="card"><div class="seg"><button id="exp">Export JSON</button><button id="impB">Import JSON</button></div><input type="file" id="impF" accept="application/json,.json" hidden><div class="mut" style="margin-top:8px">Covers breathing and plunge data. Data lives only on this device.</div></div>
 </section>
@@ -150,7 +157,8 @@ details summary{cursor:pointer;font-weight:600}
 <script>
 (()=>{
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-const LS={get:(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+let syncSoon=()=>{};
+const LS={get:(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},set:(k,v)=>{localStorage.setItem(k,JSON.stringify(v));if(k==='wh.history'||k==='wh.plunges')syncSoon()}};
 const PACES={slow:[2.2,2.2],normal:[1.6,1.6],fast:[1.0,1.0]};
 const DEF={rounds:3,breaths:30,pace:'normal',inS:1.6,outS:1.6,holdMode:'open',target:90,targetInc:0,recovery:15,rest:0,voice:true,tones:true,tick:false,vibe:true};
 const PDEF={target:120,countdown:true,cue:60,voice:true,tones:true,lastTemp:'',lastAir:'',lastLoc:'Home',locs:['Home','Cabin'],transition:60};
@@ -387,12 +395,12 @@ function renderHist(){renderHM();renderCh();
    ${Pl.slice().reverse().map(p=>`<div class="card"><div class="hist"><div><b>${dstr(p.date)}</b> ${p.duration===pbv?'<span class="pb">🏆 PB</span>':''}${p.comboId?'<span class="tag">🔗 after breathing</span>':''}<div style="margin-top:2px"><b>${fmt(p.duration)}</b> <span class="mut">/ target ${fmt(p.target)}</span> · ${p.water!=null?p.water+'°C water':'—'}${p.air!=null?' · '+p.air+'°C air':''}</div><div class="mut">${esc(p.location)} · ${['😣','😕','😐','🙂','🤩'][(p.feel||3)-1]}${p.note?' · '+esc(p.note):''}</div></div><button class="x danger" data-dp="${p.id}">✕</button></div></div>`).join('')}`;}
  $$('[data-db]').forEach(b=>b.onclick=()=>confirmBox('Delete this breathing session?',()=>{LS.set('wh.history',LS.get('wh.history',[]).filter(h=>h.id!=b.dataset.db));renderHist()}));
  $$('[data-dp]').forEach(b=>b.onclick=()=>confirmBox('Delete this plunge?',()=>{LS.set('wh.plunges',LS.get('wh.plunges',[]).filter(h=>h.id!=b.dataset.dp));renderHist()}));}
-$('#exp').onclick=()=>{const data={app:'breathe-plunge',version:1,exported:new Date().toISOString(),breathing:LS.get('wh.history',[]),plunges:LS.get('wh.plunges',[]),settings:S,plungeSettings:P};
+const exportData=()=>({app:'breathe-plunge',version:1,exported:new Date().toISOString(),breathing:LS.get('wh.history',[]),plunges:LS.get('wh.plunges',[]),settings:S,plungeSettings:P,challenge:LS.get('wh.challenge',null)});
+$('#exp').onclick=()=>{const data=exportData();
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='breathe-plunge-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)};
 $('#impB').onclick=()=>$('#impF').click();
 $('#impF').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);const b=Array.isArray(d)?d:(d.breathing||[]),p=d.plunges||[];
- if(!Array.isArray(b)||!Array.isArray(p))throw 0;const merge=(k,arr)=>{const cur=LS.get(k,[]),ids=new Set(cur.map(x=>x.id));arr.forEach(x=>{if(x&&x.id&&!ids.has(x.id))cur.push(x)});LS.set(k,cur)};
- merge('wh.history',b.filter(x=>Array.isArray(x.holds)));merge('wh.plunges',p.filter(x=>typeof x.duration==='number'));renderHist();openModal(`<p>Imported ${b.length} breathing and ${p.length} plunge entries (duplicates skipped).</p><button class="big" data-close>OK</button>`)}catch(err){openModal('<p>That file isn\'t a valid backup.</p><button class="big" data-close>OK</button>')}e.target.value=''};r.readAsText(f)};
+ mergeData(b,p);openModal(`<p>Imported ${b.length} breathing and ${p.length} plunge entries (duplicates skipped).</p><button class="big" data-close>OK</button>`)}catch(err){openModal('<p>That file isn\'t a valid backup.</p><button class="big" data-close>OK</button>')}e.target.value=''};r.readAsText(f)};
 const comboP=id=>LS.get('wh.plunges',[]).find(p=>p.comboId===id);
 const dkey=d=>{d=new Date(d);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 const addDays=(k,n)=>{const [y,m,d]=k.split('-').map(Number);return dkey(new Date(y,m-1,d+n))};
@@ -442,6 +450,29 @@ function renderHM(){const B=LS.get('wh.history',[]),Pl=LS.get('wh.plunges',[]),b
  <div class="mut" style="font-size:13px;margin-top:8px"><span class="lg" style="background:#818cf8;margin-left:0"></span>Breathing<span class="lg" style="background:#22d3ee"></span>Plunge<span class="lg" style="background:linear-gradient(135deg,#818cf8 50%,#22d3ee 50%)"></span>Both</div>${det}`;
  $('#hmP').onclick=()=>{hmOff--;renderHM()};$('#hmN').onclick=()=>{if(hmOff<0){hmOff++;renderHM()}};
  $$('#hm .hm div[data-k]').forEach(el=>el.onclick=()=>{hmSel=hmSel===el.dataset.k?null:el.dataset.k;renderHM()})}
+function mergeData(b,p){if(!Array.isArray(b)||!Array.isArray(p))throw new Error('bad');let n=0;const merge=(k,arr)=>{const cur=LS.get(k,[]),ids=new Set(cur.map(x=>x.id));arr.forEach(x=>{if(x&&x.id&&!ids.has(x.id)){cur.push(x);ids.add(x.id);n++}});LS.set(k,cur)};
+ merge('wh.history',b.filter(x=>x&&Array.isArray(x.holds)));merge('wh.plunges',p.filter(x=>x&&typeof x.duration==='number'));checkBadges(true);renderHist();return n}
+/* ROCK Core sync */
+const DEF_URL=/\.ts\.net(:\d+)?$/.test(location.host)?location.origin:'https://rock-core.tail619bea.ts.net:8444';
+let SY=Object.assign({url:DEF_URL,on:true,last:null,status:'',dirty:false},LS.get('wh.sync',{}));
+const saveSY=()=>{localStorage.setItem('wh.sync',JSON.stringify(SY));renderSY()};
+const base=()=>SY.url.trim().replace(/\/+$/,'');
+function renderSY(){if(!$('#syUrl'))return;$('#syOn').checked=SY.on;if(document.activeElement!==$('#syUrl'))$('#syUrl').value=SY.url;
+ $('#syStat').innerHTML=(SY.last?'Last backup: <b>'+new Date(SY.last).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+'</b>':'No backup yet')+(SY.status?' · '+esc(SY.status):'')+(SY.dirty?' · <span style="color:#fbbf24">changes pending</span>':'')}
+let syT=null,syBusy=false;
+async function backupNow(manual){if(syBusy)return;syBusy=true;try{const c=new AbortController(),to=setTimeout(()=>c.abort(),10000);
+ const r=await fetch(base()+'/api/backup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(exportData()),signal:c.signal});clearTimeout(to);
+ if(!r.ok)throw new Error('HTTP '+r.status);SY.last=new Date().toISOString();SY.status='✓ OK';SY.dirty=false}
+ catch(e){SY.status=(navigator.onLine===false?'offline':'can\'t reach server')+(manual?' ('+(e.message||e)+')':'')+', will retry';SY.dirty=true}
+ finally{syBusy=false;saveSY()}}
+syncSoon=()=>{SY.dirty=true;localStorage.setItem('wh.sync',JSON.stringify(SY));if(!SY.on)return;clearTimeout(syT);syT=setTimeout(()=>backupNow(false),2500)};
+$('#syOn').onchange=()=>{SY.on=$('#syOn').checked;saveSY();if(SY.on&&SY.dirty)backupNow(false)};
+$('#syUrl').onchange=()=>{SY.url=$('#syUrl').value.trim()||DEF_URL;saveSY()};
+$('#syNow').onclick=()=>{SY.status='backing up…';renderSY();backupNow(true)};
+$('#syRes').onclick=()=>confirmBox('Restore from ROCK Core? Entries are merged; duplicates are skipped and nothing is deleted.',async()=>{try{const r=await fetch(base()+'/api/backup/latest',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();
+ const n=mergeData(d.breathing||[],d.plunges||[]);openModal(`<p>Restored ${n} new entr${n===1?'y':'ies'} from ROCK Core.</p><button class="big" data-close>OK</button>`)}catch(e){openModal(`<p>Couldn't restore: ${esc(e.message||e)}</p><button class="big" data-close>OK</button>`)}});
+renderSY();if(SY.on&&SY.dirty)setTimeout(()=>backupNow(false),3000);
+window.addEventListener('online',()=>{if(SY.on&&SY.dirty)backupNow(false)});
 window.__app={get sess(){return sess},get pl(){return pl},get tr(){return tr}};
 })();
 </script></body></html>
