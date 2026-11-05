@@ -97,6 +97,10 @@ details summary{cursor:pointer;font-weight:600}
   <div class="row"><label>Chimes</label><label class="sw"><input type="checkbox" data-t="tones"><span></span></label></div>
   <div class="row"><label>Breath tick sound</label><label class="sw"><input type="checkbox" data-t="tick"><span></span></label></div>
   <div class="row"><label>Vibration <span class="mut">(Android; iPhone Safari doesn't support it)</span></label><label class="sw"><input type="checkbox" data-t="vibe"><span></span></label></div>
+  <div class="row"><label>Background music</label><label class="sw"><input type="checkbox" data-t="music"><span></span></label></div>
+  <div class="row" style="display:block"><label>Music style</label><div class="seg" id="musicStyleSeg" style="margin-top:8px"><button data-ms="drone">Calm drone</button><button data-ms="ocean">Ocean</button></div></div>
+  <div class="row" style="display:block"><label>Music volume</label><div class="seg" id="musicVolSeg" style="margin-top:8px"><button data-mv="low">Low</button><button data-mv="med">Med</button><button data-mv="high">High</button></div></div>
+  <div class="row"><label>Music preview</label><button type="button" onclick="musicPreview()" style="padding:6px 14px">▶ Preview</button></div>
  </div>
  <div class="card"><details><summary>How it works</summary>
   <p><b>1. Power breaths.</b> Breathe in fully through nose or mouth, belly then chest, and let go without force. Follow the bubble: it grows on the inhale, shrinks on the exhale.</p>
@@ -117,6 +121,7 @@ details summary{cursor:pointer;font-weight:600}
   <div class="row" style="display:block"><label>Interval cues</label><div class="seg" id="cueSeg" style="margin-top:8px"><button data-c="0">Off</button><button data-c="30">Every 30 s</button><button data-c="60">Every 60 s</button></div></div>
   <div class="row"><label>Voice</label><label class="sw"><input type="checkbox" data-pt="voice"><span></span></label></div>
   <div class="row"><label>Chimes</label><label class="sw"><input type="checkbox" data-pt="tones"><span></span></label></div>
+  <div class="row"><label>Background music</label><label class="sw"><input type="checkbox" id="plMusic"><span></span></label></div>
  </div>
  <div class="card"><details><summary>Tips</summary><p>Exhale long and slow on entry to beat the gasp reflex. Start short (30–60 s) and build. Research (Søeberg et al., 2021) suggests around 11 minutes of cold per week, split across sessions, is a useful target. Warm up with movement afterward rather than a hot shower straight away.</p></details></div>
 </section>
@@ -160,7 +165,7 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let syncSoon=()=>{};
 const LS={get:(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}},set:(k,v)=>{localStorage.setItem(k,JSON.stringify(v));if(k==='wh.history'||k==='wh.plunges')syncSoon()}};
 const PACES={slow:[2.2,2.2],normal:[1.6,1.6],fast:[1.0,1.0]};
-const DEF={rounds:3,breaths:30,pace:'normal',inS:1.6,outS:1.6,holdMode:'open',target:90,targetInc:0,recovery:15,rest:0,voice:true,tones:true,tick:false,vibe:true};
+const DEF={rounds:3,breaths:30,pace:'normal',inS:1.6,outS:1.6,holdMode:'open',target:90,targetInc:0,recovery:15,rest:0,voice:true,tones:true,tick:false,vibe:true,music:true,musicStyle:'drone',musicVol:'med'};
 const PDEF={target:120,countdown:true,cue:60,voice:true,tones:true,lastTemp:'',lastAir:'',lastLoc:'Home',locs:['Home','Cabin'],transition:60};
 let S=Object.assign({},DEF,LS.get('wh.settings',{}));
 let P=Object.assign({},PDEF,LS.get('wh.plunge.settings',{}));
@@ -195,12 +200,79 @@ function chime(on,freqs=[528,792],dur=1.6,vol=.45,dbg){if(!on)return;vol=Math.mi
  if(pool.length){const e=pool[poolI++%pool.length];try{e.src=wavURL(freqs,dur,vol);e.currentTime=0;e.play().then(()=>{if(dbg)diag('chime playing')}).catch(er=>{if(dbg)diag('chime fail: '+er.name);acChime(freqs,dur,vol)});return}catch(er){}}
  acChime(freqs,dur,vol)}
 function acChime(freqs,dur,vol){if(!AC)return;try{if(AC.state!=='running')AC.resume();const t=AC.currentTime+.03;freqs.forEach((f,i)=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,t+i*.12);g.gain.linearRampToValueAtTime(vol,t+i*.12+.02);g.gain.exponentialRampToValueAtTime(.0001,t+i*.12+dur);o.connect(g).connect(AC.destination);o.start(t+i*.12);o.stop(t+i*.12+dur+.05)})}catch(e){}}
-function soundTest(){diagLog=[];diag('v5 tap');
+function soundTest(){diagLog=[];diag('v6 tap');
  try{if(!pool.length)unlock();const e=pool[0];e.pause();e.src=wavURL([528,792],1.6,.6);e.volume=1;const pr=e.play();diag('chime started');pr&&pr.then(()=>{unlocked=true;diag('chime playing')}).catch(er=>diag('chime fail: '+er.name+' '+er.message))}catch(er){diag('chime err: '+er.message)}
  try{if(AC&&AC.state!=='running')AC.resume();}catch(er){}
  try{if(!('speechSynthesis' in window)){diag('no speech');return}const ss=speechSynthesis;ss.cancel();const u=new SpeechSynthesisUtterance('Sound check. You should hear me.');u.volume=1;u.rate=.95;u.lang='en-US';const vs=ss.getVoices();diag('voices '+vs.length);const v=vs.find(x=>/^en/.test(x.lang));if(v)u.voice=v;u.onstart=()=>diag('voice playing');u.onerror=ev=>diag('voice err: '+ev.error);ss.speak(u);setTimeout(()=>diag('speaking='+ss.speaking),1500)}catch(er){diag('speech err: '+er.message)}
 }
 window.soundTest=soundTest;window.addEventListener('error',ev=>diag('js err: '+ev.message));
+/* ---------- background meditation music ---------- */
+const IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const MUS_VOL={low:.14,med:.28,high:.42};
+let musEl=null,musURL=null,musKey='',musWant=false,musPreview=false,musFadeT=null,musBusy=false;
+function musEnsureEl(){if(musEl)return musEl;musEl=new Audio();musEl.setAttribute('playsinline','');musEl.loop=true;musEl.preload='auto';return musEl}
+function musMakeWav(style,vol){
+ /* mono 22050 Hz ~38s seamless pad; volume baked in (iOS ignores element.volume) */
+ const sr=22050,rawDur=40,xf=Math.floor(sr*2),n=Math.floor(sr*rawDur),N=n-xf;
+ const buf=new ArrayBuffer(44+N*2),v=new DataView(buf);
+ const ws=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};
+ ws(0,'RIFF');v.setUint32(4,36+N*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,N*2,true);
+ const raw=new Float32Array(n);
+ const noiseAt=i=>{const a=Math.sin(i*12.9898)*43758.5453;return (a-Math.floor(a))*2-1};
+ if(style==='ocean'){
+  let lp=0;
+  for(let i=0;i<n;i++){const t=i/sr;
+   const swell=Math.pow(.5+.5*Math.sin(2*Math.PI*t/7.5),1.8);
+   const swell2=Math.pow(.5+.5*Math.sin(2*Math.PI*t/11+1.2),1.6);
+   const rawN=(noiseAt(i)+noiseAt(i+917))*0.5;lp=lp*.92+rawN*.08;const hp=rawN-lp;
+   const air=lp*.7+hp*.15;
+   const drone=Math.sin(2*Math.PI*82.4*t)*.08+Math.sin(2*Math.PI*123.47*t)*.05;
+   raw[i]=air*(.15+.55*swell+.25*swell2)+drone*(.6+.4*swell)}
+ }else{
+  for(let i=0;i<n;i++){const t=i/sr;
+   const l1=.5+.5*Math.sin(2*Math.PI*t/8),l2=.5+.5*Math.sin(2*Math.PI*t/11),l3=.5+.5*Math.sin(2*Math.PI*t/13);
+   let x=0;
+   x+=Math.sin(2*Math.PI*110*t)*.22*(.55+.45*l1);
+   x+=Math.sin(2*Math.PI*165*t)*.16*(.55+.45*l2);
+   x+=Math.sin(2*Math.PI*220*t)*.12*(.55+.45*l3);
+   x+=Math.sin(2*Math.PI*329.63*t)*.045*(.4+.6*l1);
+   x+=Math.sin(2*Math.PI*277.18*t)*.035*l2;
+   x+=noiseAt(i)*.016*(.3+.7*l3);
+   raw[i]=x}
+ }
+ /* crossfade ends for seamless loop */
+ for(let i=0;i<xf;i++){const a=i/xf;raw[i]=raw[i]*a+raw[n-xf+i]*(1-a)}
+ let peak=1e-6;for(let i=0;i<N;i++)peak=Math.max(peak,Math.abs(raw[i]));
+ const g=vol/peak*.92;
+ for(let i=0;i<N;i++){const x=Math.max(-1,Math.min(1,raw[i]*g));v.setInt16(44+i*2,x*32767|0,true)}
+ return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}))}
+function musGetURL(){const style=S.musicStyle==='ocean'?'ocean':'drone',vol=MUS_VOL[S.musicVol]||MUS_VOL.med,k=style+'|'+S.musicVol;
+ if(musKey===k&&musURL)return musURL;if(musURL)try{URL.revokeObjectURL(musURL)}catch(e){}
+ musKey=k;musURL=musMakeWav(style,vol);return musURL}
+function musClearFade(){if(musFadeT){clearInterval(musFadeT);musFadeT=null}}
+function musFadeTo(target,ms,done){
+ musClearFade();const e=musEnsureEl();
+ if(IS_IOS){e.volume=1;if(target<=0){try{e.pause()}catch(er){}}if(done)done();return}
+ const start=e.volume,steps=Math.max(6,Math.round(ms/50)),dt=ms/steps;let i=0;
+ musFadeT=setInterval(()=>{i++;const a=i/steps;e.volume=Math.max(0,Math.min(1,start+(target-start)*a));
+  if(i>=steps){musClearFade();if(target<=0)try{e.pause()}catch(er){}if(done)done()}},dt)}
+function musStart(fromTap){if(!S.music&&!musPreview)return;musWant=true;const e=musEnsureEl();
+ try{const url=musGetURL();const already=e.src===url&&!e.paused;if(already)return;
+  if(e.src!==url){e.src=url;e.load()}e.loop=true;if(e.paused)e.currentTime=e.currentTime||0;
+  if(IS_IOS)e.volume=1;else e.volume=0;
+  const p=e.play();if(p&&p.then)p.then(()=>{if(!IS_IOS)musFadeTo(1,3000)}).catch(er=>diag('music fail: '+er.name));
+  else if(!IS_IOS)musFadeTo(1,3000)}catch(er){diag('music err: '+er.message)}}
+function musStop(hard){musWant=false;musPreview=false;musClearFade();if(!musEl)return;
+ if(hard||IS_IOS){try{musEl.pause();musEl.currentTime=0}catch(e){}}else musFadeTo(0,3000)}
+function musPause(){if(!musEl)return;musClearFade();try{musEl.pause()}catch(e){}}
+function musResume(){if(!S.music||!musWant||!musEl)return;try{const p=musEl.play();if(p&&p.catch)p.catch(()=>{})}catch(e){}}
+function musicPreview(){diagLog=[];diag('music preview');
+ const b=document.querySelector('[onclick="musicPreview()"]');
+ if(musPreview&&musEl&&!musEl.paused){musPreview=false;musStop(true);diag('preview stop');if(b)b.textContent='▶ Preview';return}
+ musPreview=true;musStart(true);diag('preview start');
+ if(b)b.textContent='■ Stop';
+ setTimeout(()=>{if(musPreview){musPreview=false;musStop(true);if(b)b.textContent='▶ Preview'}},20000)}
+window.musicPreview=musicPreview;
 function tick(up){if(S.tick)chime(true,[up?330:262],.35,.06)}
 function vibe(p){if(S.vibe&&navigator.vibrate)try{navigator.vibrate(p)}catch(e){}}
 let wake=null;async function wakeOn(){try{if('wakeLock' in navigator){wake=await navigator.wakeLock.request('screen');}}catch(e){}}
@@ -221,11 +293,17 @@ function renderSettings(){
  $('#paceCustom').style.display=S.pace==='custom'?'flex':'none';$('#pIn').value=S.inS;$('#pOut').value=S.outS;
  const dur=(S.inS+S.outS)*S.breaths;$('#paceInfo').textContent=`${S.inS}s in · ${S.outS}s out · ~${fmt(dur)} of breathing per round`;
  $$('#holdSeg button').forEach(b=>b.classList.toggle('on',b.dataset.h===S.holdMode));$('#targetBox').style.display=S.holdMode==='target'?'block':'none';
- $$('[data-t]').forEach(i=>i.checked=!!S[i.dataset.t]);}
+ $$('[data-t]').forEach(i=>i.checked=!!S[i.dataset.t]);
+ $$('#musicStyleSeg button').forEach(b=>b.classList.toggle('on',b.dataset.ms===(S.musicStyle||'drone')));
+ $$('#musicVolSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mv===(S.musicVol||'med')));
+ const pm=$('#plMusic');if(pm)pm.checked=!!S.music;}
 $$('#paceSeg button').forEach(b=>b.onclick=()=>{S.pace=b.dataset.p;if(PACES[S.pace])[S.inS,S.outS]=PACES[S.pace];saveS();renderSettings()});
 ['pIn','pOut'].forEach(id=>$('#'+id).onchange=()=>{const v=Math.min(5,Math.max(.5,parseFloat($('#'+id).value)||1.6));S[id==='pIn'?'inS':'outS']=v;saveS();renderSettings()});
 $$('#holdSeg button').forEach(b=>b.onclick=()=>{S.holdMode=b.dataset.h;saveS();renderSettings()});
-$$('[data-t]').forEach(i=>i.onchange=()=>{S[i.dataset.t]=i.checked;saveS()});
+$$('[data-t]').forEach(i=>i.onchange=()=>{S[i.dataset.t]=i.checked;saveS();if(i.dataset.t==='music'){const pm=$('#plMusic');if(pm)pm.checked=i.checked;if(!i.checked)musStop(true)}});
+$$('#musicStyleSeg button').forEach(b=>b.onclick=()=>{S.musicStyle=b.dataset.ms;saveS();renderSettings();if(musWant||musPreview){const was=!musEl||musEl.paused;musKey='';if(!was){musEl.pause();musStart(true)}}});
+$$('#musicVolSeg button').forEach(b=>b.onclick=()=>{S.musicVol=b.dataset.mv;saveS();renderSettings();if(musWant||musPreview){const playing=musEl&&!musEl.paused;musKey='';if(playing){const t=musEl.currentTime;musEl.src=musGetURL();musEl.loop=true;musEl.currentTime=t;musEl.play().catch(()=>{})}}});
+const _plM=$('#plMusic');if(_plM)_plM.onchange=()=>{S.music=_plM.checked;saveS();$$('[data-t=music]').forEach(i=>i.checked=_plM.checked);if(!_plM.checked)musStop(true)};
 buildSteppers();renderSettings();
 $$('#bset .step[data-k] button').forEach(b=>b.addEventListener('click',renderSettings));
 
@@ -236,7 +314,7 @@ function mainBtn(label,fn){R.main.innerHTML='';if(!label)return;const b=document
 
 /* ---------- breathing session engine ---------- */
 let sess=null;
-function startSession(combo){unlock();wakeOn();
+function startSession(combo){unlock();wakeOn();musPreview=false;musStart(true);
  sess={comboId:combo||null,start:Date.now(),settings:JSON.parse(JSON.stringify(S)),round:0,holds:[],phase:null,timer:null,paused:false,pausedAt:0,pausedTotal:0};
  R.run.classList.add('on');$('#cPause').textContent='Pause';
  nextRound();}
@@ -287,9 +365,9 @@ function endRecovery(){if(!sess)return;const st=sess.settings;stopLoop();clearTi
  else T(nextRound,2000);}
 function pauseToggle(){if(pl)return plPause();if(!sess)return;
  if(!sess.paused){sess.paused=true;sess.pausedAt=Date.now();$('#cPause').textContent='Resume';R.phase.dataset.prev=R.phase.textContent;R.phase.textContent='Paused';
-  if(sess.timer&&sess.tFn){clearTimeout(sess.timer);sess.tRem=Math.max(0,sess.tDue-Date.now())}try{speechSynthesis.cancel()}catch(e){}}
+  if(sess.timer&&sess.tFn){clearTimeout(sess.timer);sess.tRem=Math.max(0,sess.tDue-Date.now())}try{speechSynthesis.cancel()}catch(e){}musPause()}
  else{sess.paused=false;sess.pausedTotal+=Date.now()-sess.pausedAt;$('#cPause').textContent='Pause';R.phase.textContent=R.phase.dataset.prev||'';
-  if(sess.tFn){const f=sess.tFn;T(f,sess.tRem||0)}}}
+  if(sess.tFn){const f=sess.tFn;T(f,sess.tRem||0)}musResume()}}
 function skip(){if(pl)return;if(!sess)return;if(sess.paused)pauseToggle();clearTimeout(sess.timer);sess.tFn=null;stopLoop();
  if(sess.phase==='breath')phaseHold();else if(sess.phase==='hold')endHold();else if(sess.phase==='recover')endRecovery();else if(sess.phase==='rest')nextRound();}
 function finish(early){if(!sess)return;clearTimeout(sess.timer);stopLoop();wakeOff();
@@ -299,8 +377,8 @@ function finish(early){if(!sess)return;clearTimeout(sess.timer);stopLoop();wakeO
   const H=LS.get('wh.history',[]);const prevBest=H.reduce((m,x)=>Math.max(m,x.best),0);H.push(rec);LS.set('wh.history',H);
   if(!early){say('Session complete. Well done',s.settings.voice);chime(s.settings.tones,[528,660,792],2.2)}
   if(s.comboId&&!early){checkBadges();transition(s.comboId,rec);return}
-  summary(rec,best>prevBest&&H.length>1);checkBadges();
- }else{try{speechSynthesis.cancel()}catch(e){}}}
+  musStop();summary(rec,best>prevBest&&H.length>1);checkBadges();
+ }else{musStop();try{speechSynthesis.cancel()}catch(e){}}}
 let tr=null;
 function transition(cid,rec){const dur=Math.max(1,+P.transition||60);unlock();wakeOn();tr={cid,end:Date.now()+dur*1000};
  R.run.classList.add('on');R.round.textContent='Breathe → Plunge · best hold '+fmt(rec.best);R.phase.textContent='Get to the plunge';
@@ -318,7 +396,7 @@ function summary(r,pb){openModal(`<h2 style="margin-top:0">${r.complete?'Session
 $('#startB').onclick=()=>startSession();
 $('#cPause').onclick=pauseToggle;$('#cSkip').onclick=()=>tr?trGo():skip();
 $('#startC').onclick=()=>startSession('c'+Date.now());
-$('#cEnd').onclick=()=>{if(tr){confirmBox('Skip the plunge? Your breathing session is already saved.',()=>{trEnd();wakeOff();R.run.classList.remove('on')});return}const wasPaused=(sess&&sess.paused)||(pl&&pl.paused);if(!wasPaused)pauseToggle();confirmBox(pl?'Stop the plunge timer and log it?':'End this session? Completed rounds will be saved.',()=>{if(pl)return plStop();finish(true)},()=>{if(!wasPaused)pauseToggle()})};
+$('#cEnd').onclick=()=>{if(tr){confirmBox('Skip the plunge? Your breathing session is already saved.',()=>{trEnd();wakeOff();musStop();R.run.classList.remove('on')});return}const wasPaused=(sess&&sess.paused)||(pl&&pl.paused);if(!wasPaused)pauseToggle();confirmBox(pl?'Stop the plunge timer and log it?':'End this session? Completed rounds will be saved.',()=>{if(pl)return plStop();finish(true)},()=>{if(!wasPaused)pauseToggle()})};
 
 /* ---------- modal ---------- */
 function openModal(h){$('#modBody').innerHTML=h;$('#mod').classList.add('on');$$('#modBody [data-close]').forEach(b=>b.onclick=closeModal)}
@@ -337,7 +415,7 @@ $$('#cueSeg button').forEach(b=>b.onclick=()=>{P.cue=+b.dataset.c;saveP();render
 $$('[data-pt]').forEach(i=>i.onchange=()=>{P[i.dataset.pt]=i.checked;saveP()});renderP();
 let pl=null;
 function plSay(t){say(t,P.voice)}
-function startPlunge(cid){unlock();wakeOn();pl={comboId:typeof cid==='string'?cid:null,target:P.target,paused:false,pausedTotal:0,start:0,cd:P.countdown?3:0,last:-1,reached:false,half:false};
+function startPlunge(cid){unlock();wakeOn();musPreview=false;if(!(musEl&&!musEl.paused&&musWant))musStart(true);pl={comboId:typeof cid==='string'?cid:null,target:P.target,paused:false,pausedTotal:0,start:0,cd:P.countdown?3:0,last:-1,reached:false,half:false};
  R.run.classList.add('on');$('#cPause').textContent='Pause';$('#cSkip').style.display='none';R.round.textContent='Cold plunge';
  bubble(.8,.5,'hold');R.bub.style.background='radial-gradient(circle at 35% 30%,#bae6fd,#0ea5e9 55%,#075985)';
  if(pl.cd){R.phase.textContent='Get ready';let n=3;const cd=()=>{if(!pl)return;if(n===0){go();return}R.big.textContent=n;R.sub.textContent='';plSay(String(n));chime(P.tones,[440],.5,.1);n--;pl.cdT=setTimeout(cd,1000)};mainBtn(null);cd()}else go();}
@@ -349,9 +427,9 @@ function go(){pl.start=Date.now();R.phase.textContent='In the cold';plSay('Go. S
    if(s>=pl.target&&!pl.reached){pl.reached=true;plSay('Target reached');chime(P.tones,[528,660,792],2);vibe([200,100,200]);}
    else if(!pl.half&&pl.target>=60&&s===Math.floor(pl.target/2)){pl.half=true;plSay('Halfway');chime(P.tones,[660],.8,.1)}
    else if(P.cue&&s>0&&s%P.cue===0&&s!==pl.target){const m=s/60;plSay(s%60===0?(m===1?'1 minute':`${m} minutes`):`${Math.floor(m)?Math.floor(m)+' minutes ':''}30 seconds`);chime(P.tones,[588],.6,.08)}}});}
-function plPause(){if(!pl||!pl.start)return;if(!pl.paused){pl.paused=true;pl.pausedAt=Date.now();$('#cPause').textContent='Resume';R.phase.textContent='Paused'}else{pl.paused=false;pl.pausedTotal+=Date.now()-pl.pausedAt;$('#cPause').textContent='Pause';R.phase.textContent='In the cold'}}
+function plPause(){if(!pl||!pl.start)return;if(!pl.paused){pl.paused=true;pl.pausedAt=Date.now();$('#cPause').textContent='Resume';R.phase.textContent='Paused';musPause()}else{pl.paused=false;pl.pausedTotal+=Date.now()-pl.pausedAt;$('#cPause').textContent='Pause';R.phase.textContent='In the cold';musResume()}}
 function plStop(){if(!pl)return;clearTimeout(pl.cdT);stopLoop();const p=pl;
- const dur=p.start?Math.round((Date.now()-p.start-p.pausedTotal-(p.paused?Date.now()-p.pausedAt:0))/1000):0;pl=null;wakeOff();
+ const dur=p.start?Math.round((Date.now()-p.start-p.pausedTotal-(p.paused?Date.now()-p.pausedAt:0))/1000):0;pl=null;wakeOff();musStop();
  R.run.classList.remove('on');$('#cSkip').style.display='';R.bub.style.background='';
  if(dur<1)return;chime(P.tones,[440,330]);plLog(dur,p.target,p.comboId)}
 function plLog(dur,target,cid){const locs=P.locs;
