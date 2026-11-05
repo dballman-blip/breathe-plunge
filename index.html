@@ -182,7 +182,7 @@ function wavURL(freqs,dur,vol){const k=freqs.join(',')+'|'+dur+'|'+vol;if(wavCac
 const pool=[],SIL=()=>wavURL([1],.1,0);let poolI=0,unlocked=false;
 function unlock(){
  try{if(!pool.length)for(let i=0;i<3;i++){const e=new Audio();e.setAttribute('playsinline','');e.preload='auto';pool.push(e)}
-  pool.forEach(e=>{e.src=SIL();e.volume=1;e.play().then(()=>{if(!unlocked){unlocked=true;diag('audio unlocked')}}).catch(er=>diag('unlock fail: '+er.name))})}catch(e){diag('pool err: '+e.message)}
+  if(!unlocked)pool.forEach(e=>{e.src=SIL();e.volume=1;e.play().then(()=>{if(!unlocked){unlocked=true;diag('audio unlocked')}}).catch(er=>diag('unlock fail: '+er.name))})}catch(e){diag('pool err: '+e.message)}
  try{if(!AC||AC.state==='closed'){AC=new (window.AudioContext||window.webkitAudioContext)()} if(AC.state!=='running')AC.resume()}catch(e){}
  try{if('speechSynthesis' in window){speechSynthesis.resume();pickVoice();if(!unlock.sp){unlock.sp=1;const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}}}catch(e){}
 }
@@ -195,7 +195,12 @@ function chime(on,freqs=[528,792],dur=1.6,vol=.45,dbg){if(!on)return;vol=Math.mi
  if(pool.length){const e=pool[poolI++%pool.length];try{e.src=wavURL(freqs,dur,vol);e.currentTime=0;e.play().then(()=>{if(dbg)diag('chime playing')}).catch(er=>{if(dbg)diag('chime fail: '+er.name);acChime(freqs,dur,vol)});return}catch(er){}}
  acChime(freqs,dur,vol)}
 function acChime(freqs,dur,vol){if(!AC)return;try{if(AC.state!=='running')AC.resume();const t=AC.currentTime+.03;freqs.forEach((f,i)=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,t+i*.12);g.gain.linearRampToValueAtTime(vol,t+i*.12+.02);g.gain.exponentialRampToValueAtTime(.0001,t+i*.12+dur);o.connect(g).connect(AC.destination);o.start(t+i*.12);o.stop(t+i*.12+dur+.05)})}catch(e){}}
-function soundTest(){diagLog=[];unlock();setTimeout(()=>{chime(true,[528,792],1.6,.45,true);setTimeout(()=>say('Sound check. You should hear me.',true,true),900)},150)}
+function soundTest(){diagLog=[];diag('v4 tap');
+ try{if(!pool.length)unlock();const e=pool[0];e.pause();e.src=wavURL([528,792],1.6,.6);e.volume=1;const pr=e.play();diag('chime started');pr&&pr.then(()=>{unlocked=true;diag('chime playing')}).catch(er=>diag('chime fail: '+er.name+' '+er.message))}catch(er){diag('chime err: '+er.message)}
+ try{if(AC&&AC.state!=='running')AC.resume();}catch(er){}
+ try{if(!('speechSynthesis' in window)){diag('no speech');return}const ss=speechSynthesis;ss.cancel();const u=new SpeechSynthesisUtterance('Sound check. You should hear me.');u.volume=1;u.rate=.95;u.lang='en-US';const vs=ss.getVoices();diag('voices '+vs.length);const v=vs.find(x=>/^en/.test(x.lang));if(v)u.voice=v;u.onstart=()=>diag('voice playing');u.onerror=ev=>diag('voice err: '+ev.error);ss.speak(u);setTimeout(()=>diag('speaking='+ss.speaking),1500)}catch(er){diag('speech err: '+er.message)}
+}
+window.addEventListener('error',ev=>diag('js err: '+ev.message));
 function tick(up){if(S.tick)chime(true,[up?330:262],.35,.06)}
 function vibe(p){if(S.vibe&&navigator.vibrate)try{navigator.vibrate(p)}catch(e){}}
 let wake=null;async function wakeOn(){try{if('wakeLock' in navigator){wake=await navigator.wakeLock.request('screen');}}catch(e){}}
