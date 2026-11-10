@@ -97,7 +97,7 @@ details summary{cursor:pointer;font-weight:600}
   <div class="row"><label>Chimes</label><label class="sw"><input type="checkbox" data-t="tones"><span></span></label></div>
   <div class="row"><label>Breath tick sound</label><label class="sw"><input type="checkbox" data-t="tick"><span></span></label></div>
   <div class="row"><label>Vibration <span class="mut">(Android; iPhone Safari doesn't support it)</span></label><label class="sw"><input type="checkbox" data-t="vibe"><span></span></label></div>
-  <div class="row"><label>Background music</label><label class="sw"><input type="checkbox" data-t="music"><span></span></label></div>
+  <div class="row"><label>Background music <span class="mut">(during holds)</span></label><label class="sw"><input type="checkbox" data-t="music"><span></span></label></div>
   <div class="row" style="display:block"><label>Music style</label><div class="seg" id="musicStyleSeg" style="margin-top:8px"><button data-ms="drone">Calm drone</button><button data-ms="ocean">Ocean</button></div></div>
   <div class="row" style="display:block"><label>Music volume</label><div class="seg" id="musicVolSeg" style="margin-top:8px"><button data-mv="low">Low</button><button data-mv="med">Med</button><button data-mv="high">High</button></div></div>
   <div class="row"><label>Music preview</label><button type="button" onclick="musicPreview()" style="padding:6px 14px">▶ Preview</button></div>
@@ -214,14 +214,21 @@ window.soundTest=soundTest;window.addEventListener('error',ev=>diag('js err: '+e
    pauses a music <audio> and leaves it paused, so a live session went silent
    while Preview — music alone — still worked. Volume stays on a GainNode
    (element.volume is ignored on iOS). The buffer is cached per style and is
-   not rebuilt when a session starts or the volume changes. */
+   not rebuilt when a session starts or the volume changes.
+   A breathing session primes the loop at gain 0 on the Start tap so iOS will
+   allow later fades without a new gesture. Music is audible only during the
+   retention hold and the recovery hold (and throughout a plunge), fading in
+   and out over MUS_FADE. Power breathing and rest stay silent. */
 const IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const MUS_VOL={low:.14,med:.28,high:.42};
+const MUS_FADE=1500;
 let musGain=null,musSrc=null,musSrcOn=false,musOff=0,musStartedAt=0,musStylePlaying='',musBufs={},musPcm={},musLevel=0;
 let musEnvFrom=0,musEnvTo=0,musEnvAt=0,musEnvDur=0;
 let musWant=false,musPreview=false,musUserPause=false,musGen=0,musWatch=null,musSpokeAt=0,musStarting=false;
 function musStyle(){return S.musicStyle==='ocean'?'ocean':'drone'}
 function musTarget(){return MUS_VOL[S.musicVol]||MUS_VOL.med}
+function musHoldMusic(){return !!(sess&&!sess.paused&&(sess.phase==='hold'||(sess.phase==='recover'&&sess.recStart)))}
+function musVolTarget(){if(musPreview)return musTarget();if(!S.music||musUserPause)return 0;if(pl&&!pl.paused)return musTarget();if(musHoldMusic())return musTarget();return 0}
 function musSessionType(){try{const a=navigator.audioSession;if(a&&a.type!=='playback')a.type='playback'}catch(e){}}
 function musEnsureAC(){
  musSessionType();
@@ -284,22 +291,33 @@ function musPlayBody(style,offset,rampMs){const ctx=musEnsureAC();if(!ctx)return
  musOff=off;musStartedAt=ctx.currentTime;musStylePlaying=style;musSrc=src;musSrcOn=true;
  src.onended=()=>{if(musSrc!==src)return;musNotePos();musSrcOn=false;musSrc=null;if(musWant&&!musUserPause)musAfterCue(false)};
  try{src.start(0,off)}catch(e){if(musSrc===src){musSrcOn=false;musSrc=null}diag('music fail: '+(e.name||e.message||e));return}
- const now=ctx.currentTime,g=musGain.gain,target=musTarget(),dur=Math.max(.03,(rampMs||40)/1000);
+ const now=ctx.currentTime,g=musGain.gain,target=musVolTarget(),dur=Math.max(.03,(rampMs||40)/1000);
  g.cancelScheduledValues(now);g.setValueAtTime(0,now);g.linearRampToValueAtTime(target,now+dur);musEnv(0,target,now,dur);diag('music on '+style)}
 function musStart(fromTap){if(!S.music&&!musPreview)return;const style=musStyle();
  musWant=true;musUserPause=false;musGen++;musArm();
  const ctx=musEnsureAC();if(!ctx)return;
  if(ctx.state==='suspended'&&!fromTap){diag('music needs tap');return}
- if(musSrcOn&&musStylePlaying===style){if(Math.abs((musLevel||0)-musTarget())>0.011)musRamp(musTarget(),IS_IOS?40:200);return}
- musPlayAt(style,musSrcOn?musPos():(musOff||0),IS_IOS?40:3000)}
+ const target=musVolTarget();
+ if(musSrcOn&&musStylePlaying===style){if(Math.abs((musLevel||0)-target)>0.011)musRamp(target,MUS_FADE);return}
+ musPlayAt(style,musSrcOn?musPos():(musOff||0),MUS_FADE)}
+function musSync(){if(musPreview)return;if(!S.music){if(musWant||musSrcOn)musStop(true);return}
+ if(!(sess||pl||tr||musWant)){if(musSrcOn)musStop();return}
+ if(!musWant){musStart(false);return}
+ if(musUserPause)return;
+ const style=musStyle(),target=musVolTarget();
+ if(musSrcOn&&musStylePlaying===style){if(Math.abs((musLevel||0)-target)>0.011)musRamp(target,MUS_FADE);return}
+ musPlayAt(style,musSrcOn?musPos():(musOff||0),MUS_FADE)}
 function musStop(hard){musWant=false;musPreview=false;musUserPause=false;const gen=++musGen;
  if(musWatch){clearInterval(musWatch);musWatch=null}
  if(!musSrcOn&&!musGain)return;
- if(hard||IS_IOS||!AC){musKill(gen);musEnv(0,0,0,0);if(musGain&&AC){const t=AC.currentTime;musGain.gain.cancelScheduledValues(t);musGain.gain.setValueAtTime(0,t)}return}
- musRamp(0,3000);setTimeout(()=>musKill(gen),3100)}
-function musPause(){if(!musWant&&!musSrcOn)return;musUserPause=true;musNotePos();const gen=++musGen;musKill(gen);musEnv(0,0,0,0);
- if(musGain&&AC){const t=AC.currentTime;musGain.gain.cancelScheduledValues(t);musGain.gain.setValueAtTime(0,t)}}
-function musResume(){if(!S.music||!musWant||!musUserPause)return;musUserPause=false;musGen++;musArm();musPlayAt(musStyle(),musOff||0,80)}
+ if(hard||!AC){musKill(gen);musEnv(0,0,0,0);if(musGain&&AC){const t=AC.currentTime;musGain.gain.cancelScheduledValues(t);musGain.gain.setValueAtTime(0,t)}return}
+ musRamp(0,MUS_FADE);setTimeout(()=>musKill(gen),MUS_FADE+100)}
+function musPause(){if(!musWant&&!musSrcOn)return;musUserPause=true;
+ if(musSrcOn)musRamp(0,MUS_FADE);else musEnv(0,0,0,0)}
+function musResume(){if(!S.music||!musWant||!musUserPause)return;musUserPause=false;musGen++;musArm();
+ const style=musStyle(),target=musVolTarget();
+ if(musSrcOn&&musStylePlaying===style){if(target>0.011)musRamp(target,MUS_FADE);return}
+ if(target>0.011||S.music)musPlayAt(style,musOff||0,MUS_FADE)}
 function musicPreview(){diagLog=[];diag('music preview');
  const b=document.querySelector('[onclick="musicPreview()"]');
  if(musPreview&&musSrcOn){musPreview=false;musStop(true);diag('preview stop');if(b)b.textContent='▶ Preview';return}
@@ -334,10 +352,10 @@ function renderSettings(){
 $$('#paceSeg button').forEach(b=>b.onclick=()=>{S.pace=b.dataset.p;if(PACES[S.pace])[S.inS,S.outS]=PACES[S.pace];saveS();renderSettings()});
 ['pIn','pOut'].forEach(id=>$('#'+id).onchange=()=>{const v=Math.min(5,Math.max(.5,parseFloat($('#'+id).value)||1.6));S[id==='pIn'?'inS':'outS']=v;saveS();renderSettings()});
 $$('#holdSeg button').forEach(b=>b.onclick=()=>{S.holdMode=b.dataset.h;saveS();renderSettings()});
-$$('[data-t]').forEach(i=>i.onchange=()=>{S[i.dataset.t]=i.checked;saveS();if(i.dataset.t==='music'){const pm=$('#plMusic');if(pm)pm.checked=i.checked;if(!i.checked)musStop(true)}});
+$$('[data-t]').forEach(i=>i.onchange=()=>{S[i.dataset.t]=i.checked;saveS();if(i.dataset.t==='music'){const pm=$('#plMusic');if(pm)pm.checked=i.checked;if(!i.checked)musStop(true);else if(sess||pl||tr)musStart(true)}});
 $$('#musicStyleSeg button').forEach(b=>b.onclick=()=>{S.musicStyle=b.dataset.ms;saveS();renderSettings();if((musWant||musPreview)&&!musUserPause&&musStylePlaying&&musStylePlaying!==musStyle())musStart(true)});
-$$('#musicVolSeg button').forEach(b=>b.onclick=()=>{S.musicVol=b.dataset.mv;saveS();renderSettings();if((musWant||musPreview)&&!musUserPause&&musSrcOn)musRamp(musTarget(),IS_IOS?40:180)});
-const _plM=$('#plMusic');if(_plM)_plM.onchange=()=>{S.music=_plM.checked;saveS();$$('[data-t=music]').forEach(i=>i.checked=_plM.checked);if(!_plM.checked)musStop(true)};
+$$('#musicVolSeg button').forEach(b=>b.onclick=()=>{S.musicVol=b.dataset.mv;saveS();renderSettings();if((musWant||musPreview)&&!musUserPause&&musSrcOn)musRamp(musVolTarget(),IS_IOS?40:180)});
+const _plM=$('#plMusic');if(_plM)_plM.onchange=()=>{S.music=_plM.checked;saveS();$$('[data-t=music]').forEach(i=>i.checked=_plM.checked);if(!_plM.checked)musStop(true);else if(sess||pl||tr)musStart(true)};
 buildSteppers();renderSettings();
 $$('#bset .step[data-k] button').forEach(b=>b.addEventListener('click',renderSettings));
 
@@ -359,7 +377,7 @@ function nextRound(){sess.round++;if(sess.round>sess.settings.rounds)return fini
  R.round.textContent=`Round ${sess.round} of ${sess.settings.rounds}`;
  say(sess.round===1?`Round 1. Breathe in`:`Round ${sess.round}`,sess.settings.voice);chime(sess.settings.tones,[440,660]);
  sess.breath=0;phaseBreath();}
-function phaseBreath(){const st=sess.settings;sess.phase='breath';R.phase.textContent='Power breathing';stopLoop();
+function phaseBreath(){const st=sess.settings;sess.phase='breath';R.phase.textContent='Power breathing';musSync();stopLoop();
  mainBtn(null);
  const inhale=()=>{if(!sess)return;sess.breath++;sess.sub='in';const n=sess.breath;
   R.big.textContent=n;R.sub.textContent=`${n} / ${st.breaths} · in`;bubble(1,st.inS,'full');tick(true);
@@ -374,7 +392,7 @@ function phaseBreath(){const st=sess.settings;sess.phase='breath';R.phase.textCo
  sess.resumeBreath=inhale;
  bubble(.45,.3,'');T(inhale,sess.round===1?1200:1500);}
 function holdTarget(){const st=sess.settings;return st.target+st.targetInc*(sess.round-1)}
-function phaseHold(){const st=sess.settings;sess.phase='hold';R.phase.textContent='Retention · hold';chime(st.tones,[392,523]);vibe(200);
+function phaseHold(){const st=sess.settings;sess.phase='hold';R.phase.textContent='Retention · hold';musSync();chime(st.tones,[392,523]);vibe(200);
  bubble(.4,1.2,'hold');sess.holdStart=Date.now();sess.pausedTotal=0;
  const tgt=st.holdMode==='target'?holdTarget():0;
  R.sub.textContent=tgt?`target ${fmt(tgt)}`:'tap Breathe when you need air';
@@ -385,14 +403,14 @@ function phaseHold(){const st=sess.settings;sess.phase='hold';R.phase.textConten
   if(tgt){const rem=tgt-el;R.big.textContent=fmt(Math.ceil(rem));const r=Math.ceil(rem);if(r!==last){last=r;if(r===30&&tgt>45)say('Thirty seconds',st.voice);if(r<=3&&r>0)chime(st.tones,[660],.4,.08)}if(rem<=0)endHold()}
   else{R.big.textContent=fmt(Math.floor(el));const s=Math.floor(el);if(s!==last){last=s;if(s>0&&s%60===0)chime(st.tones,[523],.6,.08)}}});}
 function endHold(){if(!sess||sess.phase!=='hold')return;stopLoop();const ms=Date.now()-sess.holdStart-sess.pausedTotal-(sess.paused?Date.now()-sess.pausedAt:0);
- sess.holds.push(Math.round(ms/100)/10);if(sess.paused){sess.paused=false;$('#cPause').textContent='Pause'}phaseRecovery();}
-function phaseRecovery(){const st=sess.settings;sess.phase='recover';R.phase.textContent='Recovery breath';mainBtn(null);
+ sess.holds.push(Math.round(ms/100)/10);if(sess.paused){sess.paused=false;musUserPause=false;$('#cPause').textContent='Pause'}phaseRecovery();}
+function phaseRecovery(){const st=sess.settings;sess.phase='recover';sess.recStart=0;R.phase.textContent='Recovery breath';musSync();mainBtn(null);
  say('Recovery breath. Breathe in, and hold',st.voice);chime(st.tones,[528,792]);vibe([100,60,100]);
  R.big.textContent='In';R.sub.textContent='one big breath in';bubble(1.05,2,'full');
  T(()=>{sess.recStart=Date.now();sess.pausedTotal=0;const dur=st.recovery;
-  R.sub.textContent='hold';
+  R.sub.textContent='hold';musSync();
   loop(()=>{if(sess.paused)return;const rem=dur-(Date.now()-sess.recStart-sess.pausedTotal)/1000;R.big.textContent=Math.max(0,Math.ceil(rem));if(rem<=0){stopLoop();endRecovery()}})},2500);}
-function endRecovery(){if(!sess)return;const st=sess.settings;stopLoop();clearTimeout(sess.timer);say('Let go',st.voice);bubble(.45,2,'');chime(st.tones,[440,330]);
+function endRecovery(){if(!sess)return;const st=sess.settings;sess.recStart=0;musSync();stopLoop();clearTimeout(sess.timer);say('Let go',st.voice);bubble(.45,2,'');chime(st.tones,[440,330]);
  if(sess.round>=st.rounds)return T(()=>finish(false),1500);
  if(st.rest>0){sess.phase='rest';R.phase.textContent='Rest';R.sub.textContent='breathe normally';sess.restStart=Date.now();sess.pausedTotal=0;mainBtn('Next round',()=>{stopLoop();nextRound()});
   loop(()=>{if(sess.paused)return;const rem=st.rest-(Date.now()-sess.restStart-sess.pausedTotal)/1000;R.big.textContent=Math.max(0,Math.ceil(rem));if(rem<=0){stopLoop();nextRound()}});}
@@ -449,7 +467,7 @@ $$('#cueSeg button').forEach(b=>b.onclick=()=>{P.cue=+b.dataset.c;saveP();render
 $$('[data-pt]').forEach(i=>i.onchange=()=>{P[i.dataset.pt]=i.checked;saveP()});renderP();
 let pl=null;
 function plSay(t){say(t,P.voice)}
-function startPlunge(cid){unlock();wakeOn();musPreview=false;if(!musSrcOn||musUserPause)musStart(true);pl={comboId:typeof cid==='string'?cid:null,target:P.target,paused:false,pausedTotal:0,start:0,cd:P.countdown?3:0,last:-1,reached:false,half:false};
+function startPlunge(cid){unlock();wakeOn();musPreview=false;pl={comboId:typeof cid==='string'?cid:null,target:P.target,paused:false,pausedTotal:0,start:0,cd:P.countdown?3:0,last:-1,reached:false,half:false};musUserPause=false;musStart(true);
  R.run.classList.add('on');$('#cPause').textContent='Pause';$('#cSkip').style.display='none';R.round.textContent='Cold plunge';
  bubble(.8,.5,'hold');R.bub.style.background='radial-gradient(circle at 35% 30%,#bae6fd,#0ea5e9 55%,#075985)';
  if(pl.cd){R.phase.textContent='Get ready';let n=3;const cd=()=>{if(!pl)return;if(n===0){go();return}R.big.textContent=n;R.sub.textContent='';plSay(String(n));chime(P.tones,[440],.5,.1);n--;pl.cdT=setTimeout(cd,1000)};mainBtn(null);cd()}else go();}
