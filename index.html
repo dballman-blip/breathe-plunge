@@ -75,7 +75,7 @@ details summary{cursor:pointer;font-weight:600}
 </style></head><body>
 <main>
 <section id="v-breathe" class="view on">
- <h1>Breathe</h1><div class="mut">Power breaths, an empty-lung hold, a recovery breath. Repeat.</div>
+ <h1>Breathe</h1><div class="mut">Power breaths, an empty-lung hold, a recovery breath. Repeat. <span style="opacity:.65">v7</span></div>
  <button class="big" id="startB">Start session</button>
  <button class="alt" id="startC">🫁 → 🧊 Breathe → Plunge</button>
  <div class="card" id="bset">
@@ -174,69 +174,85 @@ const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%6
 const fmtT=ms=>fmt(ms/1000);
 const esc=t=>String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-/* ---------- audio / speech / vibe / wake ---------- */
+/* ---------- audio / speech / vibe / wake (v7) ----------
+   One AudioContext graph for music and chimes, created/resumed in the Start
+   (or Test / Preview) tap. iOS has a single playback session: a second
+   HTMLAudioElement, or speechSynthesis.cancel() then speak(), will pause or
+   swallow other sound — which is why early-round cues stayed silent and the
+   hold music kept dipping. Music is a looping BufferSource that stays running
+   for the whole session; volume changes only on a GainNode (never pause or
+   replay on a timer). Chimes are oscillators on the same graph. Speech is
+   queued, never cancelled to make room for the next line. After a cue or an
+   app-switch, we resume the context and reattach the loop if iOS killed it,
+   fading from the current level instead of slamming to 0. */
 let AC=null,voiceObj=null;
 let diagLog=[];function diag(m){diagLog.push(m);const el=document.getElementById('sndDiag');if(el)el.textContent=diagLog.slice(-6).join(' · ')}
-const wavCache={};
-function wavURL(freqs,dur,vol){const k=freqs.join(',')+'|'+dur+'|'+vol;if(wavCache[k])return wavCache[k];
- const sr=22050,n=Math.max(1,Math.floor(sr*(dur+.12*freqs.length+.05))),buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
- const ws=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};
- ws(0,'RIFF');v.setUint32(4,36+n*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,n*2,true);
- for(let i=0;i<n;i++){const t=i/sr;let x=0;freqs.forEach((f,j)=>{const st=j*.12,lt=t-st;if(lt<0||lt>dur)return;const env=lt<.02?lt/.02:Math.exp(-5*(lt-.02)/dur);x+=Math.sin(2*Math.PI*f*lt)*env*vol});x=Math.max(-1,Math.min(1,x));v.setInt16(44+i*2,x*32767,true)}
- return wavCache[k]=URL.createObjectURL(new Blob([buf],{type:'audio/wav'}))}
-const pool=[],SIL=()=>wavURL([1],.1,0);let poolI=0,unlocked=false;
-function unlock(){
- try{if(!pool.length)for(let i=0;i<3;i++){const e=new Audio();e.setAttribute('playsinline','');e.preload='auto';pool.push(e)}
-  if(!unlocked)pool.forEach(e=>{e.src=SIL();e.volume=1;e.play().then(()=>{if(!unlocked){unlocked=true;diag('audio unlocked')}}).catch(er=>diag('unlock fail: '+er.name))})}catch(e){diag('pool err: '+e.message)}
- try{if(!AC||AC.state==='closed'){AC=new (window.AudioContext||window.webkitAudioContext)()} if(AC.state!=='running')AC.resume()}catch(e){}
- try{if('speechSynthesis' in window){speechSynthesis.resume();pickVoice();if(!unlock.sp){unlock.sp=1;const u=new SpeechSynthesisUtterance(' ');u.volume=0;u.onend=()=>musAfterCue(true);u.onerror=()=>musAfterCue(true);speechSynthesis.speak(u)}}}catch(e){}
-}
-['pointerdown','touchend'].forEach(ev=>document.addEventListener(ev,()=>{if(!unlocked)unlock();if(musWant&&!musUserPause&&(!musSrcOn||(AC&&AC.state!=='running')))musAfterCue(true)},{passive:true}));
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(AC&&AC.state!=='running')AC.resume();unlocked=false}});
-function pickVoice(){try{const v=speechSynthesis.getVoices();voiceObj=v.find(x=>/en-(CA|GB|AU)/.test(x.lang)&&/Daniel|Karen|Moira|Serena|Google/.test(x.name))||v.find(x=>/^en/.test(x.lang))||null}catch(e){}}
-if('speechSynthesis' in window)speechSynthesis.onvoiceschanged=pickVoice;
-function say(t,on,dbg){if(!on)return;if(!('speechSynthesis' in window)){if(dbg)diag('no speech support');return}try{if(!voiceObj)pickVoice();const busy=speechSynthesis.speaking||speechSynthesis.pending;if(busy)speechSynthesis.cancel();const go=()=>{const u=new SpeechSynthesisUtterance(t);u.rate=.95;u.pitch=.95;u.volume=1;u.lang='en-US';if(voiceObj)u.voice=voiceObj;musSpokeAt=Date.now();u.onend=()=>{if(dbg)diag('voice ended');musAfterCue(true)};u.onerror=e=>{if(dbg)diag('voice error: '+e.error);musAfterCue(true)};if(dbg)diag('voices: '+speechSynthesis.getVoices().length);speechSynthesis.resume();speechSynthesis.speak(u)};busy?setTimeout(go,120):go()}catch(e){if(dbg)diag('voice err: '+e.message)}}
-function chime(on,freqs=[528,792],dur=1.6,vol=.45,dbg){if(!on)return;vol=Math.min(.6,vol*2.5);
- /* A second <audio> pauses the music element on iOS. Mix chimes in the shared graph while music is active. */
- if(musWant&&AC){acChime(freqs,dur,vol);if(dbg)diag('chime mix');return}
- if(pool.length){const e=pool[poolI++%pool.length];try{e.src=wavURL(freqs,dur,vol);e.currentTime=0;e.play().then(()=>{if(dbg)diag('chime playing')}).catch(er=>{if(dbg)diag('chime fail: '+er.name);acChime(freqs,dur,vol)});return}catch(er){}}
- acChime(freqs,dur,vol)}
-function acChime(freqs,dur,vol){if(!AC)return;try{if(AC.state!=='running')AC.resume();const t=AC.currentTime+.03;freqs.forEach((f,i)=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,t+i*.12);g.gain.linearRampToValueAtTime(vol,t+i*.12+.02);g.gain.exponentialRampToValueAtTime(.0001,t+i*.12+dur);o.connect(g).connect(AC.destination);o.start(t+i*.12);o.stop(t+i*.12+dur+.05)})}catch(e){}}
-function soundTest(){diagLog=[];diag('v6 tap');
- try{if(!pool.length)unlock();const e=pool[0];e.pause();e.src=wavURL([528,792],1.6,.6);e.volume=1;const pr=e.play();diag('chime started');pr&&pr.then(()=>{unlocked=true;diag('chime playing')}).catch(er=>diag('chime fail: '+er.name+' '+er.message))}catch(er){diag('chime err: '+er.message)}
- try{if(AC&&AC.state!=='running')AC.resume();}catch(er){}
- try{if(!('speechSynthesis' in window)){diag('no speech');return}const ss=speechSynthesis;ss.cancel();const u=new SpeechSynthesisUtterance('Sound check. You should hear me.');u.volume=1;u.rate=.95;u.lang='en-US';const vs=ss.getVoices();diag('voices '+vs.length);const v=vs.find(x=>/^en/.test(x.lang));if(v)u.voice=v;u.onstart=()=>diag('voice playing');u.onerror=ev=>diag('voice err: '+ev.error);ss.speak(u);setTimeout(()=>diag('speaking='+ss.speaking),1500)}catch(er){diag('speech err: '+er.message)}
-}
-window.soundTest=soundTest;window.addEventListener('error',ev=>diag('js err: '+ev.message));
-/* ---------- background meditation music ----------
-   One AudioContext graph for the loop and for session chimes. iOS Safari has a
-   single playback session: playing a chime <audio> (or starting speechSynthesis)
-   pauses a music <audio> and leaves it paused, so a live session went silent
-   while Preview — music alone — still worked. Volume stays on a GainNode
-   (element.volume is ignored on iOS). The buffer is cached per style and is
-   not rebuilt when a session starts or the volume changes.
-   A breathing session primes the loop at gain 0 on the Start tap so iOS will
-   allow later fades without a new gesture. Music is audible only during the
-   retention hold and the recovery hold (and throughout a plunge), fading in
-   and out over MUS_FADE. Power breathing and rest stay silent. */
 const IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const MUS_VOL={low:.14,med:.28,high:.42};
 const MUS_FADE=1500;
-let musGain=null,musSrc=null,musSrcOn=false,musOff=0,musStartedAt=0,musStylePlaying='',musBufs={},musPcm={},musLevel=0;
+let musGain=null,cueGain=null,musSrc=null,musSrcOn=false,musOff=0,musStartedAt=0,musStylePlaying='',musBufs={},musPcm={},musLevel=0;
 let musEnvFrom=0,musEnvTo=0,musEnvAt=0,musEnvDur=0;
 let musWant=false,musPreview=false,musUserPause=false,musGen=0,musWatch=null,musSpokeAt=0,musStarting=false;
+let keepSrc=null,sayQ=[],saySpeaking=false;
 function musStyle(){return S.musicStyle==='ocean'?'ocean':'drone'}
 function musTarget(){return MUS_VOL[S.musicVol]||MUS_VOL.med}
 function musHoldMusic(){return !!(sess&&!sess.paused&&(sess.phase==='hold'||(sess.phase==='recover'&&sess.recStart)))}
 function musVolTarget(){if(musPreview)return musTarget();if(!S.music||musUserPause)return 0;if(pl&&!pl.paused)return musTarget();if(musHoldMusic())return musTarget();return 0}
 function musSessionType(){try{const a=navigator.audioSession;if(a&&a.type!=='playback')a.type='playback'}catch(e){}}
-function musEnsureAC(){
+function acEnsure(){
  musSessionType();
- try{if(!AC||AC.state==='closed')AC=new (window.AudioContext||window.webkitAudioContext)();
-  musBindAC(AC);if(AC.state!=='running'){const p=AC.resume();if(p&&p.catch)p.catch(()=>{})}return AC}catch(e){diag('music ac '+(e.message||e));return null}}
+ try{
+  if(!AC||AC.state==='closed'){AC=new (window.AudioContext||window.webkitAudioContext)();musBufs={};musGain=null;cueGain=null;musSrc=null;musSrcOn=false;keepSrc=null;musBindAC(AC)}
+  if(!musGain||musGain.context!==AC){musGain=AC.createGain();musGain.gain.value=Math.max(0,musLevel||0);musGain.connect(AC.destination)}
+  if(!cueGain||cueGain.context!==AC){cueGain=AC.createGain();cueGain.gain.value=1;cueGain.connect(AC.destination)}
+  if(AC.state!=='running'){const p=AC.resume();if(p&&p.catch)p.catch(()=>{})}
+  return AC;
+ }catch(e){diag('audio ac '+(e.message||e));return null}}
+function musEnsureAC(){return acEnsure()}
 function musBindAC(ctx){if(ctx.__mus)return;ctx.__mus=1;
- ctx.addEventListener('statechange',()=>{if(ctx.state==='interrupted'||ctx.state==='suspended')musNotePos();else if(ctx.state==='running')musAfterCue(true)});
- try{const a=navigator.audioSession;if(a&&!a.__mus){a.__mus=1;a.addEventListener('statechange',()=>{if(a.state==='interrupted')musNotePos();else if(a.state==='active')musAfterCue(true)})}}catch(e){}}
+ ctx.addEventListener('statechange',()=>{if(ctx.state==='interrupted'||ctx.state==='suspended')musNotePos();else if(ctx.state==='running')musEnsureLoop()});
+ try{const a=navigator.audioSession;if(a&&!a.__mus){a.__mus=1;a.addEventListener('statechange',()=>{if(a.state==='interrupted')musNotePos();else if(a.state==='active'){if(AC&&AC.state!=='running')AC.resume();musEnsureLoop()}})}}catch(e){}}
+function acPrime(){const ctx=AC;if(!ctx)return;
+ try{const n=Math.max(1,Math.floor(ctx.sampleRate*.05)),buf=ctx.createBuffer(1,n,ctx.sampleRate),s=ctx.createBufferSource(),g=ctx.createGain();g.gain.value=0.0001;s.buffer=buf;s.connect(g).connect(ctx.destination);s.start()}catch(e){}
+ if(keepSrc&&keepSrc.context===ctx)return;
+ try{if(keepSrc){try{keepSrc.stop()}catch(e){}}const n=Math.max(1,Math.floor(ctx.sampleRate*.25)),buf=ctx.createBuffer(1,n,ctx.sampleRate),s=ctx.createBufferSource(),g=ctx.createGain();g.gain.value=0.0001;s.buffer=buf;s.loop=true;s.connect(g).connect(ctx.destination);s.start();keepSrc=s}catch(e){keepSrc=null}}
+function unlock(){
+ const ctx=acEnsure();
+ if(ctx)acPrime();
+ try{if('speechSynthesis' in window){speechSynthesis.resume();pickVoice()}}catch(e){}
+}
+function onForeground(){if(AC&&AC.state!=='running'){try{AC.resume()}catch(e){}}if(musWant&&!musUserPause)musEnsureLoop()}
+['pointerdown','touchend'].forEach(ev=>document.addEventListener(ev,()=>{if(!AC||AC.state!=='running')acEnsure();if(musWant&&!musUserPause)musEnsureLoop()},{passive:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)onForeground()});
+window.addEventListener('pageshow',()=>onForeground());
+function pickVoice(){try{const v=speechSynthesis.getVoices();voiceObj=v.find(x=>/en-(CA|GB|AU)/.test(x.lang)&&/Daniel|Karen|Moira|Serena|Google/.test(x.name))||v.find(x=>/^en/.test(x.lang))||null}catch(e){}}
+if('speechSynthesis' in window)speechSynthesis.onvoiceschanged=pickVoice;
+function sayFlush(){sayQ.length=0;saySpeaking=false;try{if('speechSynthesis' in window)speechSynthesis.cancel()}catch(e){}setTimeout(()=>musEnsureLoop(),180)}
+function say(t,on,dbg){if(!on)return;if(!('speechSynthesis' in window)){if(dbg)diag('no speech support');return}sayQ.push({t,dbg});sayNext()}
+function sayNext(){if(saySpeaking||!sayQ.length||!('speechSynthesis' in window))return;
+ const {t,dbg}=sayQ.shift();saySpeaking=true;
+ try{if(!voiceObj)pickVoice();const u=new SpeechSynthesisUtterance(t);u.rate=.95;u.pitch=.95;u.volume=1;u.lang='en-US';if(voiceObj)u.voice=voiceObj;musSpokeAt=Date.now();
+  const done=why=>{if(u._done)return;u._done=1;saySpeaking=false;if(dbg)diag(why);try{if(AC&&AC.state!=='running')AC.resume()}catch(e){}musEnsureLoop();setTimeout(sayNext,80)};
+  u.onend=()=>done('voice ended');u.onerror=e=>done('voice error: '+(e.error||''));
+  if(dbg)diag('voices: '+speechSynthesis.getVoices().length);
+  try{speechSynthesis.resume()}catch(e){}
+  speechSynthesis.speak(u);
+  setTimeout(()=>{if(u._done)return;try{if(speechSynthesis.speaking||speechSynthesis.pending)return}catch(e){}done('voice timeout')},Math.max(5000,String(t).length*250));
+ }catch(e){saySpeaking=false;if(dbg)diag('voice err: '+e.message);musEnsureLoop();setTimeout(sayNext,80)}}
+function chime(on,freqs=[528,792],dur=1.6,vol=.45,dbg){if(!on)return;vol=Math.min(.6,vol*2.5);acChime(freqs,dur,vol,dbg)}
+function acChime(freqs,dur,vol,dbg){const ctx=acEnsure();if(!ctx)return;
+ const play=()=>{try{const t=ctx.currentTime+.02,dest=cueGain||ctx.destination;freqs.forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=f;const t0=t+i*.12;g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(vol,t0+.02);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);o.connect(g).connect(dest);o.start(t0);o.stop(t0+dur+.05)});if(dbg)diag('chime mix')}catch(e){if(dbg)diag('chime err: '+e.message)}};
+ if(ctx.state==='running')play();else{const p=ctx.resume();if(p&&p.then)p.then(()=>{if(ctx.state==='running')play()}).catch(()=>{});else play()}}
+function soundTest(){diagLog=[];diag('v7 tap');
+ try{unlock();acChime([528,792],1.6,.6,true)}catch(er){diag('chime err: '+er.message)}
+ try{if(!('speechSynthesis' in window)){diag('no speech');return}const u=new SpeechSynthesisUtterance('Sound check. You should hear me.');u.volume=1;u.rate=.95;u.lang='en-US';const vs=speechSynthesis.getVoices();diag('voices '+vs.length);const v=vs.find(x=>/^en/.test(x.lang));if(v)u.voice=v;u.onstart=()=>diag('voice playing');u.onend=()=>{diag('voice ended');musEnsureLoop()};u.onerror=ev=>diag('voice err: '+ev.error);speechSynthesis.resume();speechSynthesis.speak(u);setTimeout(()=>diag('speaking='+speechSynthesis.speaking),1500)}catch(er){diag('speech err: '+er.message)}
+}
+window.soundTest=soundTest;window.addEventListener('error',ev=>diag('js err: '+ev.message));
+/* ---------- background meditation music ----------
+   Audible only during the retention hold and the recovery hold (and throughout
+   a plunge), fading in and out over MUS_FADE. Power breathing and rest stay
+   silent. The loop is primed at gain 0 on the Start tap so iOS will allow
+   later fades without a new gesture. */
 function musSamples(style){
  const sr=22050,rawDur=40,xf=Math.floor(sr*2),n=Math.floor(sr*rawDur),N=n-xf,raw=new Float32Array(n);
  const noiseAt=i=>{const a=Math.sin(i*12.9898)*43758.5453;return (a-Math.floor(a))*2-1};
@@ -276,37 +292,45 @@ function musAudible(t){if(!(musEnvDur>0))return musEnvTo;const a=Math.max(0,Math
 function musRamp(target,ms){if(!musGain||!AC){musEnv(target,target,0,0);return}const g=musGain.gain,t=AC.currentTime,cur=Math.max(0,Math.min(1,musAudible(t)));
  g.cancelScheduledValues(t);g.setValueAtTime(cur,t);const dur=ms>30?ms/1000:0;musEnv(cur,target,t,dur);
  if(dur)g.linearRampToValueAtTime(target,t+dur);else g.setValueAtTime(target,t)}
-function musKill(gen){if(gen!=null&&gen!==musGen)return;musSrcOn=false;const s=musSrc;musSrc=null;if(!s)return;try{s.onended=null;s.stop(0)}catch(e){}}
-function musSpeechBusy(){try{if(!(speechSynthesis.speaking||speechSynthesis.pending))return false;
- if(musSpokeAt&&Date.now()-musSpokeAt>6000)return false;return true}catch(e){return false}}
-function musAfterCue(force){if(musStarting||!musWant||musUserPause)return;if(!force&&musSpeechBusy())return;
+function musKill(gen){if(gen!=null&&gen!==musGen)return;musSrcOn=false;const s=musSrc;musSrc=null;if(!s)return;try{s.onended=null;s.stop()}catch(e){}}
+function musSpeechBusy(){try{if(!(speechSynthesis.speaking||speechSynthesis.pending||saySpeaking||sayQ.length))return false;
+ if(musSpokeAt&&Date.now()-musSpokeAt>8000)return false;return true}catch(e){return false}}
+function musEnsureLoop(){if(musStarting||!musWant||musUserPause)return;
  try{if(AC&&AC.state!=='running'){const p=AC.resume();if(p&&p.catch)p.catch(()=>{})}}catch(e){}
- if(!musSrcOn)musPlayAt(musStylePlaying||musStyle(),musOff||0,80)}
-function musArm(){if(musWatch||!IS_IOS)return;musWatch=setInterval(()=>{if(!musWant){clearInterval(musWatch);musWatch=null;return}musAfterCue(false)},1000)}
-function musPlayAt(style,offset,rampMs){if(musStarting)return;musStarting=true;try{musPlayBody(style,offset,rampMs)}finally{musStarting=false}}
-function musPlayBody(style,offset,rampMs){const ctx=musEnsureAC();if(!ctx)return;const buf=musBuffer(style);if(!buf)return;
+ if(!musSrcOn)musPlayAt(musStylePlaying||musStyle(),musOff||0,musVolTarget()>0.011?280:40,false)}
+function musAfterCue(force){if(!force&&musSpeechBusy())return;musEnsureLoop()}
+function musArm(){if(musWatch||!IS_IOS)return;musWatch=setInterval(()=>{if(!musWant){clearInterval(musWatch);musWatch=null;return}
+ try{if(AC&&AC.state!=='running')AC.resume()}catch(e){}
+ if(!musSrcOn&&!musSpeechBusy())musEnsureLoop()},2000)}
+function musPlayAt(style,offset,rampMs,fromZero){if(musStarting)return;musStarting=true;try{musPlayBody(style,offset,rampMs,fromZero)}finally{musStarting=false}}
+function musPlayBody(style,offset,rampMs,fromZero){const ctx=acEnsure();if(!ctx)return;const buf=musBuffer(style);if(!buf)return;
  if(!musGain||musGain.context!==ctx){musGain=ctx.createGain();musGain.gain.value=0;musGain.connect(ctx.destination)}
- const gen=musGen;musKill(gen);const src=ctx.createBufferSource();src.buffer=buf;src.loop=true;src.connect(musGain);
+ if(musSrcOn&&musSrc&&musStylePlaying===style&&musSrc.context===ctx){const target=musVolTarget();if(Math.abs((musLevel||0)-target)>0.011)musRamp(target,rampMs||MUS_FADE);return}
+ const cur=Math.max(0,Math.min(1,musAudible(ctx.currentTime)));
+ musNotePos();
+ const old=musSrc;if(old){try{old.onended=null}catch(e){}}
+ const src=ctx.createBufferSource();src.buffer=buf;src.loop=true;src.loopStart=0;src.loopEnd=buf.duration;src.connect(musGain);
  const off=((offset%buf.duration)+buf.duration)%buf.duration;
  musOff=off;musStartedAt=ctx.currentTime;musStylePlaying=style;musSrc=src;musSrcOn=true;
- src.onended=()=>{if(musSrc!==src)return;musNotePos();musSrcOn=false;musSrc=null;if(musWant&&!musUserPause)musAfterCue(false)};
- try{src.start(0,off)}catch(e){if(musSrc===src){musSrcOn=false;musSrc=null}diag('music fail: '+(e.name||e.message||e));return}
- const now=ctx.currentTime,g=musGain.gain,target=musVolTarget(),dur=Math.max(.03,(rampMs||40)/1000);
- g.cancelScheduledValues(now);g.setValueAtTime(0,now);g.linearRampToValueAtTime(target,now+dur);musEnv(0,target,now,dur);diag('music on '+style)}
+ src.onended=()=>{if(musSrc!==src)return;musNotePos();musSrcOn=false;musSrc=null;if(musWant&&!musUserPause)musEnsureLoop()};
+ try{src.start(ctx.currentTime,off)}catch(e){try{src.start()}catch(e2){if(musSrc===src){musSrcOn=false;musSrc=null}diag('music fail: '+(e.name||e.message||e));return}}
+ if(old&&old!==src){try{old.stop()}catch(e){}}
+ const target=musVolTarget(),startGain=fromZero?0:cur,now=ctx.currentTime,g=musGain.gain,dur=Math.max(.03,(rampMs==null?40:rampMs)/1000);
+ g.cancelScheduledValues(now);g.setValueAtTime(startGain,now);g.linearRampToValueAtTime(target,now+dur);musEnv(startGain,target,now,dur);diag('music on '+style)}
 function musStart(fromTap){if(!S.music&&!musPreview)return;const style=musStyle();
  musWant=true;musUserPause=false;musGen++;musArm();
- const ctx=musEnsureAC();if(!ctx)return;
+ const ctx=acEnsure();if(!ctx)return;if(fromTap)acPrime();
  if(ctx.state==='suspended'&&!fromTap){diag('music needs tap');return}
  const target=musVolTarget();
  if(musSrcOn&&musStylePlaying===style){if(Math.abs((musLevel||0)-target)>0.011)musRamp(target,MUS_FADE);return}
- musPlayAt(style,musSrcOn?musPos():(musOff||0),MUS_FADE)}
+ musPlayAt(style,musSrcOn?musPos():(musOff||0),MUS_FADE,!musSrcOn&&target<0.011)}
 function musSync(){if(musPreview)return;if(!S.music){if(musWant||musSrcOn)musStop(true);return}
  if(!(sess||pl||tr||musWant)){if(musSrcOn)musStop();return}
  if(!musWant){musStart(false);return}
  if(musUserPause)return;
  const style=musStyle(),target=musVolTarget();
  if(musSrcOn&&musStylePlaying===style){if(Math.abs((musLevel||0)-target)>0.011)musRamp(target,MUS_FADE);return}
- musPlayAt(style,musSrcOn?musPos():(musOff||0),MUS_FADE)}
+ musPlayAt(style,musSrcOn?musPos():(musOff||0),MUS_FADE,false)}
 function musStop(hard){musWant=false;musPreview=false;musUserPause=false;const gen=++musGen;
  if(musWatch){clearInterval(musWatch);musWatch=null}
  if(!musSrcOn&&!musGain)return;
@@ -317,11 +341,11 @@ function musPause(){if(!musWant&&!musSrcOn)return;musUserPause=true;
 function musResume(){if(!S.music||!musWant||!musUserPause)return;musUserPause=false;musGen++;musArm();
  const style=musStyle(),target=musVolTarget();
  if(musSrcOn&&musStylePlaying===style){if(target>0.011)musRamp(target,MUS_FADE);return}
- if(target>0.011||S.music)musPlayAt(style,musOff||0,MUS_FADE)}
+ if(target>0.011||S.music)musPlayAt(style,musOff||0,MUS_FADE,false)}
 function musicPreview(){diagLog=[];diag('music preview');
  const b=document.querySelector('[onclick="musicPreview()"]');
  if(musPreview&&musSrcOn){musPreview=false;musStop(true);diag('preview stop');if(b)b.textContent='▶ Preview';return}
- musPreview=true;musStart(true);diag('preview start');
+ musPreview=true;unlock();musStart(true);diag('preview start');
  if(b)b.textContent='■ Stop';
  setTimeout(()=>{if(musPreview){musPreview=false;musStop(true);if(b)b.textContent='▶ Preview'}},20000)}
 window.musicPreview=musicPreview;
@@ -330,7 +354,6 @@ function vibe(p){if(S.vibe&&navigator.vibrate)try{navigator.vibrate(p)}catch(e){
 let wake=null;async function wakeOn(){try{if('wakeLock' in navigator){wake=await navigator.wakeLock.request('screen');}}catch(e){}}
 function wakeOff(){try{wake&&wake.release()}catch(e){}wake=null}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&(sess||pl))wakeOn()});
-
 /* ---------- tabs ---------- */
 $$('nav.tabs button').forEach(b=>b.onclick=()=>{$$('nav.tabs button').forEach(x=>x.classList.toggle('on',x===b));$$('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+b.dataset.v));if(b.dataset.v==='history')renderHist();window.scrollTo(0,0)});
 
@@ -417,7 +440,7 @@ function endRecovery(){if(!sess)return;const st=sess.settings;sess.recStart=0;mu
  else T(nextRound,2000);}
 function pauseToggle(){if(pl)return plPause();if(!sess)return;
  if(!sess.paused){sess.paused=true;sess.pausedAt=Date.now();$('#cPause').textContent='Resume';R.phase.dataset.prev=R.phase.textContent;R.phase.textContent='Paused';
-  if(sess.timer&&sess.tFn){clearTimeout(sess.timer);sess.tRem=Math.max(0,sess.tDue-Date.now())}try{speechSynthesis.cancel()}catch(e){}musPause()}
+  if(sess.timer&&sess.tFn){clearTimeout(sess.timer);sess.tRem=Math.max(0,sess.tDue-Date.now())}sayFlush();musPause()}
  else{sess.paused=false;sess.pausedTotal+=Date.now()-sess.pausedAt;$('#cPause').textContent='Pause';R.phase.textContent=R.phase.dataset.prev||'';
   if(sess.tFn){const f=sess.tFn;T(f,sess.tRem||0)}musResume()}}
 function skip(){if(pl)return;if(!sess)return;if(sess.paused)pauseToggle();clearTimeout(sess.timer);sess.tFn=null;stopLoop();
@@ -430,7 +453,7 @@ function finish(early){if(!sess)return;clearTimeout(sess.timer);stopLoop();wakeO
   if(!early){say('Session complete. Well done',s.settings.voice);chime(s.settings.tones,[528,660,792],2.2)}
   if(s.comboId&&!early){checkBadges();transition(s.comboId,rec);return}
   musStop();summary(rec,best>prevBest&&H.length>1);checkBadges();
- }else{musStop();try{speechSynthesis.cancel()}catch(e){}}}
+ }else{musStop();sayFlush()}}
 let tr=null;
 function transition(cid,rec){const dur=Math.max(1,+P.transition||60);unlock();wakeOn();tr={cid,end:Date.now()+dur*1000};
  R.run.classList.add('on');R.round.textContent='Breathe → Plunge · best hold '+fmt(rec.best);R.phase.textContent='Get to the plunge';
